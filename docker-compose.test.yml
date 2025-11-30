@@ -1,0 +1,91 @@
+# Docker Compose configuration for integration testing
+# Usage: docker compose -f docker-compose.test.yml up --build --abort-on-container-exit
+
+services:
+  broker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: remotellm-broker-test
+    # Use command-line args to avoid pydantic-settings JSON parsing issues
+    command: >
+      --host 0.0.0.0
+      --port 8443
+      --health-port 8080
+      --connector-token test-connector-token
+      --user-api-key sk-test-user-key
+      --log-level INFO
+    ports:
+      - "18443:8443"  # API + WebSocket relay at /ws
+      - "18080:8080"  # Health
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - remotellm-test
+
+  connector:
+    build:
+      context: .
+      dockerfile: Dockerfile.connector
+    container_name: remotellm-connector-test
+    # Use command-line args to avoid pydantic-settings JSON parsing issues
+    command: >
+      --broker-url ws://broker:8443/ws
+      --broker-token test-connector-token
+      --llm-url http://mock-llm:8000
+      --model test-model
+      --health-port 8081
+      --log-level INFO
+    depends_on:
+      broker:
+        condition: service_healthy
+      mock-llm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - remotellm-test
+
+  mock-llm:
+    build:
+      context: ./tests/docker
+      dockerfile: Dockerfile.mock-llm
+    container_name: remotellm-mock-llm-test
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - remotellm-test
+
+  test-runner:
+    build:
+      context: ./tests/docker
+      dockerfile: Dockerfile.test-runner
+    container_name: remotellm-test-runner
+    environment:
+      - BROKER_API_URL=http://broker:8443
+      - BROKER_HEALTH_URL=http://broker:8080
+      - CONNECTOR_HEALTH_URL=http://connector:8081
+      - USER_API_KEY=sk-test-user-key
+    depends_on:
+      broker:
+        condition: service_healthy
+      connector:
+        condition: service_healthy
+    networks:
+      - remotellm-test
+
+networks:
+  remotellm-test:
+    driver: bridge

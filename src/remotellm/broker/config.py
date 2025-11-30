@@ -33,7 +33,7 @@ class BrokerConfig(BaseSettings):
         description="Port for HTTPS/WSS server",
     )
 
-    # Tunnel authentication
+    # Relay authentication
     connector_tokens: list[str] = Field(
         default_factory=list,
         description="Valid tokens for connector authentication",

@@ -1,4 +1,4 @@
-"""WebSocket tunnel server for accepting connector connections."""
+"""WebSocket relay server for accepting connector connections."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from remotellm.shared.protocol import (
     ApprovedPayload,
     AuthPayload,
     MessageType,
-    TunnelMessage,
+    RelayMessage,
     create_approved_message,
     create_auth_fail_message,
     create_auth_ok_message,
@@ -41,7 +41,7 @@ class ConnectorRegistration:
     connected_at: float
     models: list[str] = field(default_factory=list)
     llm_api_key: str | None = None
-    pending_requests: dict[str, asyncio.Future[TunnelMessage]] = field(default_factory=dict)
+    pending_requests: dict[str, asyncio.Future[RelayMessage]] = field(default_factory=dict)
 
 
 @dataclass
@@ -76,8 +76,8 @@ class AuthResult:
     correlation_id: str | None = None
 
 
-class TunnelServer:
-    """WebSocket server for connector tunnel connections.
+class RelayServer:
+    """WebSocket server for connector relay connections.
 
     Can operate in two modes:
     1. Integrated mode: WebSocket handler at /ws path on main HTTP server
@@ -96,7 +96,7 @@ class TunnelServer:
         on_connector_registered: "Callable[[str, list[str], str | None], None] | None" = None,
         on_connector_disconnected: "Callable[[str], None] | None" = None,
     ):
-        """Initialize the tunnel server.
+        """Initialize the relay server.
 
         Args:
             host: Host to bind to (for standalone mode)
@@ -151,9 +151,9 @@ class TunnelServer:
     async def send_request(
         self,
         connector_id: str,
-        message: TunnelMessage,
+        message: RelayMessage,
         timeout: float = 300.0,
-    ) -> TunnelMessage:
+    ) -> RelayMessage:
         """Send a request to a connector and wait for response.
 
         Args:
@@ -173,7 +173,7 @@ class TunnelServer:
             raise KeyError(f"Connector {connector_id} not found")
 
         # Create a future for the response
-        response_future: asyncio.Future[TunnelMessage] = asyncio.Future()
+        response_future: asyncio.Future[RelayMessage] = asyncio.Future()
         connector.pending_requests[message.id] = response_future
 
         try:
@@ -191,8 +191,8 @@ class TunnelServer:
     async def send_request_streaming(
         self,
         connector_id: str,
-        message: TunnelMessage,
-    ) -> asyncio.Queue[TunnelMessage]:
+        message: RelayMessage,
+    ) -> asyncio.Queue[RelayMessage]:
         """Send a request and return a queue for streaming responses.
 
         Args:
@@ -210,7 +210,7 @@ class TunnelServer:
             raise KeyError(f"Connector {connector_id} not found")
 
         # Create a queue for streaming responses
-        response_queue: asyncio.Queue[TunnelMessage] = asyncio.Queue()
+        response_queue: asyncio.Queue[RelayMessage] = asyncio.Queue()
         connector.pending_requests[message.id] = response_queue  # type: ignore
 
         # Send the request
@@ -226,24 +226,24 @@ class TunnelServer:
     def setup_routes(self, app: web.Application) -> None:
         """Set up WebSocket route on an aiohttp application.
 
-        This integrates the tunnel server with the main HTTP server.
+        This integrates the relay server with the main HTTP server.
 
         Args:
             app: The aiohttp application to add the /ws route to
         """
         app.router.add_get("/ws", self._handle_websocket_request)
-        logger.info("WebSocket tunnel route registered at /ws")
+        logger.info("WebSocket relay route registered at /ws")
 
     async def start(self) -> None:
-        """Mark the tunnel server as running.
+        """Mark the relay server as running.
 
         For integrated mode, routes should be set up via setup_routes().
         """
         self._running = True
-        logger.info("Tunnel server started (integrated mode)")
+        logger.info("Relay server started (integrated mode)")
 
     async def stop(self) -> None:
-        """Stop the tunnel server."""
+        """Stop the relay server."""
         self._running = False
         # Close all connected websockets
         for connector_id, connector in list(self._connectors.items()):
@@ -251,7 +251,7 @@ class TunnelServer:
                 await connector.websocket.close()
             except Exception:
                 pass
-        logger.info("Tunnel server stopped")
+        logger.info("Relay server stopped")
 
     async def _handle_websocket_request(self, request: web.Request) -> web.WebSocketResponse:
         """Handle incoming WebSocket connection request (aiohttp handler).
@@ -311,7 +311,7 @@ class TunnelServer:
                 async for msg in websocket:
                     if msg.type == aiohttp.WSMsgType.TEXT:
                         # Pending connectors can only receive PING/PONG
-                        message = TunnelMessage.model_validate_json(msg.data)
+                        message = RelayMessage.model_validate_json(msg.data)
                         if message.type == MessageType.PONG:
                             logger.debug("Received PONG from pending connector", connector_id=connector_id)
                     elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.ERROR):
@@ -389,7 +389,7 @@ class TunnelServer:
                 logger.warning("Unexpected message type during auth", type=msg.type)
                 return None
 
-            message = TunnelMessage.model_validate_json(raw_message)
+            message = RelayMessage.model_validate_json(raw_message)
 
             if message.type != MessageType.AUTH:
                 logger.warning("Expected AUTH message", received=message.type)
@@ -449,7 +449,7 @@ class TunnelServer:
     async def _authenticate_with_store(
         self,
         websocket: web.WebSocketResponse,
-        message: TunnelMessage,
+        message: RelayMessage,
         payload: AuthPayload,
     ) -> AuthResult:
         """Authenticate using ConnectorStore for approval workflow.
@@ -541,7 +541,7 @@ class TunnelServer:
         async for msg in websocket:
             if msg.type == aiohttp.WSMsgType.TEXT:
                 try:
-                    message = TunnelMessage.model_validate_json(msg.data)
+                    message = RelayMessage.model_validate_json(msg.data)
                     await self._handle_message(connector_id, message)
                 except Exception as e:
                     logger.error("Failed to process message", connector_id=connector_id, error=str(e))
@@ -552,7 +552,7 @@ class TunnelServer:
                 logger.info("Connector disconnected", connector_id=connector_id)
                 break
 
-    async def _handle_message(self, connector_id: str, message: TunnelMessage) -> None:
+    async def _handle_message(self, connector_id: str, message: RelayMessage) -> None:
         """Handle a message from a connector.
 
         Args:

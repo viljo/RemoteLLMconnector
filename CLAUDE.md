@@ -4,14 +4,14 @@ Auto-generated from feature plans. Last updated: 2025-11-29
 
 ## Components
 
-- **LLM_connector**: Runs locally, connects to local LLM, tunnels to broker
-- **LLM_broker**: Runs on server, accepts tunnels, exposes API for external users
+- **LLM_connector**: Runs locally, connects to local LLM, relays to broker
+- **LLM_broker**: Runs on server, accepts relay connections, exposes API for external users
 
 ## Technologies
 
 - Python 3.11+, asyncio
 - aiohttp (HTTP client/server)
-- websockets (tunnel protocol)
+- websockets (relay protocol)
 - pydantic-settings (config)
 - structlog (JSON logging)
 - click (CLI)
@@ -22,7 +22,7 @@ Auto-generated from feature plans. Last updated: 2025-11-29
 ```text
 src/remotellm/
 ├── shared/              # Shared protocol and models
-│   ├── protocol.py      # TunnelMessage types (AUTH, REQUEST, etc.)
+│   ├── protocol.py      # RelayMessage types (AUTH, REQUEST, etc.)
 │   ├── models.py        # Pydantic models (ChatCompletionRequest, etc.)
 │   └── logging.py       # structlog configuration
 ├── connector/           # LLM_connector (pure transparent proxy)
@@ -30,14 +30,14 @@ src/remotellm/
 │   ├── config.py        # ConnectorConfig settings (models list)
 │   ├── main.py          # Connector application
 │   ├── health.py        # /health endpoint (shows registered models)
-│   ├── tunnel_client.py # WebSocket client to broker (sends models in AUTH)
+│   ├── relay_client.py  # WebSocket client to broker (sends models in AUTH)
 │   └── llm_client.py    # HTTP client to local LLM (receives API key per-request)
 └── broker/              # LLM_broker (centralized API key management)
     ├── __main__.py      # CLI: python -m remotellm.broker
     ├── config.py        # BrokerConfig settings (user_api_keys, connector_configs)
     ├── main.py          # Broker application
     ├── health.py        # /health endpoint (shows all available models)
-    ├── tunnel_server.py # WebSocket server for connectors
+    ├── relay_server.py  # WebSocket server for connectors
     ├── router.py        # Model-based routing (ModelRouter class)
     └── api.py           # HTTP API for external users (model routing, API key injection)
 

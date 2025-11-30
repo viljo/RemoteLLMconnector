@@ -40,12 +40,12 @@
 - [x] T007 [P] Update broker CLI to add `--user-api-key` option in src/remotellm/broker/__main__.py
 - [x] T008 [P] Update broker CLI to add `--connector-config` option for YAML file in src/remotellm/broker/__main__.py
 
-### 2.2 Tunnel Server Updates
+### 2.2 Relay Server Updates
 
-- [x] T009 Update ConnectorRegistration dataclass to include `models` list in src/remotellm/broker/tunnel_server.py
-- [x] T010 Update ConnectorRegistration dataclass to include `llm_api_key` in src/remotellm/broker/tunnel_server.py
-- [x] T011 Update _authenticate() to extract models from AUTH payload in src/remotellm/broker/tunnel_server.py
-- [x] T012 Update _authenticate() to look up llm_api_key from config by token in src/remotellm/broker/tunnel_server.py
+- [x] T009 Update ConnectorRegistration dataclass to include `models` list in src/remotellm/broker/relay_server.py
+- [x] T010 Update ConnectorRegistration dataclass to include `llm_api_key` in src/remotellm/broker/relay_server.py
+- [x] T011 Update _authenticate() to extract models from AUTH payload in src/remotellm/broker/relay_server.py
+- [x] T012 Update _authenticate() to look up llm_api_key from config by token in src/remotellm/broker/relay_server.py
 
 ### 2.3 Model Router (NEW)
 
@@ -68,7 +68,7 @@
 ### 2.5 Broker Main Integration
 
 - [x] T025 Instantiate ModelRouter in Broker class in src/remotellm/broker/main.py
-- [x] T026 Wire TunnelServer registration events to ModelRouter in src/remotellm/broker/main.py
+- [x] T026 Wire RelayServer registration events to ModelRouter in src/remotellm/broker/main.py
 - [x] T027 Pass ModelRouter to API server in src/remotellm/broker/main.py
 
 **Checkpoint**: Broker supports multiple connectors with model-based routing
@@ -87,9 +87,9 @@
 - [x] T031 [P] Update connector CLI to add `--model` option (multiple) in src/remotellm/connector/__main__.py
 - [x] T032 [P] Update connector CLI to remove `--api-key` and `--llm-api-key` options in src/remotellm/connector/__main__.py
 
-### 3.2 Tunnel Client Updates
+### 3.2 Relay Client Updates
 
-- [x] T033 Update AUTH payload to include models list in src/remotellm/connector/tunnel_client.py
+- [x] T033 Update AUTH payload to include models list in src/remotellm/connector/relay_client.py
 
 ### 3.3 LLM Client Updates
 

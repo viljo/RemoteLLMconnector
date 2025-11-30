@@ -9,7 +9,7 @@ from remotellm.shared.logging import get_logger
 
 if TYPE_CHECKING:
     from remotellm.broker.router import ModelRouter
-    from remotellm.broker.tunnel_server import TunnelServer
+    from remotellm.broker.relay_server import RelayServer
 
 logger = get_logger(__name__)
 
@@ -20,18 +20,18 @@ class HealthServer:
     def __init__(
         self,
         port: int,
-        tunnel_server: "TunnelServer",
+        relay_server: "RelayServer",
         router: "ModelRouter | None" = None,
     ):
         """Initialize the health server.
 
         Args:
             port: Port to bind to
-            tunnel_server: Tunnel server for status
+            relay_server: Relay server for status
             router: Model router for routing info
         """
         self.port = port
-        self.tunnel_server = tunnel_server
+        self.relay_server = relay_server
         self.router = router
         self._start_time = time.time()
         self._app = web.Application()
@@ -62,7 +62,7 @@ class HealthServer:
 
         Returns health status of the broker with connector count and models (T042, T043).
         """
-        connector_count = self.tunnel_server.connector_count
+        connector_count = self.relay_server.connector_count
         uptime = time.time() - self._start_time
 
         # Get models from router if available
@@ -90,7 +90,7 @@ class HealthServer:
 
         Returns readiness status - ready when at least one connector is available.
         """
-        connector_count = self.tunnel_server.connector_count
+        connector_count = self.relay_server.connector_count
         ready = connector_count > 0
 
         return web.json_response(

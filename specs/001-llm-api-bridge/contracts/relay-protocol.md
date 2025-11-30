@@ -1,16 +1,16 @@
-# Tunnel Protocol Specification
+# Relay Protocol Specification
 
 **Feature**: 001-llm-api-bridge
 **Date**: 2025-11-29
 
 ## Overview
 
-The tunnel protocol defines how the connector communicates with the external API provider over WebSocket. This is a custom protocol that wraps HTTP requests/responses for transport through the tunnel.
+The relay protocol defines how the connector communicates with the external API provider over WebSocket. This is a custom protocol that wraps HTTP requests/responses for transport through the relay.
 
 ## Connection Establishment
 
-1. Connector initiates WebSocket connection to `tunnel_url`
-2. Connector sends `AUTH` message with `tunnel_token`
+1. Connector initiates WebSocket connection to `relay_url`
+2. Connector sends `AUTH` message with `relay_token`
 3. Provider responds with `AUTH_OK` or `AUTH_FAIL`
 4. On `AUTH_OK`, connection is established and ready for requests
 
@@ -38,7 +38,7 @@ Sent immediately after WebSocket connection.
   "type": "AUTH",
   "id": "auth-1",
   "payload": {
-    "token": "<tunnel_token>",
+    "token": "<relay_token>",
     "connector_version": "1.0.0"
   }
 }

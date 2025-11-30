@@ -89,8 +89,8 @@ Expected response:
 ```json
 {
   "status": "healthy",
-  "tunnel_connected": true,
-  "tunnel_state": "connected",
+  "relay_connected": true,
+  "relay_state": "connected",
   "llm_available": true,
   "models": ["llama3.2", "codellama"],
   "uptime_seconds": 42.5
@@ -353,4 +353,4 @@ sudo nano /etc/remotellm/users.yaml
 - [Configuration Reference](./data-model.md) - All configuration options
 - [API Contract](./contracts/openapi.yaml) - OpenAPI specification
 - [OAuth API Contract](./contracts/oauth-api.yaml) - OAuth endpoints specification
-- [Tunnel Protocol](./contracts/tunnel-protocol.md) - Internal protocol details
+- [Relay Protocol](./contracts/relay-protocol.md) - Internal protocol details

@@ -5,7 +5,7 @@
 
 ## Technology Decisions
 
-### 1. Tunnel Protocol
+### 1. Relay Protocol
 
 **Decision**: WebSocket over TLS
 
@@ -19,7 +19,7 @@
 **Alternatives Considered**:
 - HTTP/2 Server Push: More complex, less bidirectional control
 - gRPC streaming: Heavier dependency, overkill for this use case
-- Raw TCP tunnel: No built-in framing, harder to debug
+- Raw TCP relay: No built-in framing, harder to debug
 - MQTT: Message broker pattern doesn't fit request/response model
 
 ### 2. Async HTTP Client
@@ -142,8 +142,8 @@ mypy>=1.8.0
 
 | Question | Resolution |
 |----------|------------|
-| Tunnel protocol | WebSocket - bidirectional, streaming-friendly |
-| How to handle tunnel reconnection | Exponential backoff with jitter, max 5 retries then alert |
+| Relay protocol | WebSocket - bidirectional, streaming-friendly |
+| How to handle relay reconnection | Exponential backoff with jitter, max 5 retries then alert |
 | API key storage format | JSON file or environment variables, operator choice |
 | Health endpoint binding | Separate HTTP server on configurable port (default 8080) |
 | Metrics format | Prometheus-compatible text format via health endpoint |
@@ -160,7 +160,7 @@ mypy>=1.8.0
 │  ┌─────────────┐    ┌─────────────────┐   │   ┌─────────────────┐   ┌─────────────┐
 │  │ Local LLM   │<-->│  LLM_connector  │<──┼──>│   LLM_broker    │<->│ External    │
 │  │ (Ollama,    │    │                 │ NAT   │                 │   │ Users       │
-│  │  llama.cpp) │    │ - tunnel_client │tunnel │ - tunnel_server │   │ (Cline,     │
+│  │  llama.cpp) │    │ - relay_client │relay │ - relay_server │   │ (Cline,     │
 │  │             │    │ - llm_client    │   │   │ - api           │   │  API calls) │
 │  │             │    │ - auth          │   │   │ - router        │   │             │
 │  │             │    │ - ratelimit     │   │   │ - registry      │   │             │
@@ -169,21 +169,21 @@ mypy>=1.8.0
 └─────────────────────────────────────────────────────────────────────────────┘
 
 Request flow:
-  External User -> LLM_broker (api) -> [NAT tunnel] -> LLM_connector -> Local LLM
+  External User -> LLM_broker (api) -> [NAT relay] -> LLM_connector -> Local LLM
 
 Response flow:
-  Local LLM -> LLM_connector -> [NAT tunnel] -> LLM_broker -> External User
+  Local LLM -> LLM_connector -> [NAT relay] -> LLM_broker -> External User
 ```
 
 ## Request Flow
 
 1. External user sends request to LLM_broker API endpoint
-2. LLM_broker routes request through WebSocket tunnel to LLM_connector
+2. LLM_broker routes request through WebSocket relay to LLM_connector
 3. LLM_connector validates API key (local validation)
 4. LLM_connector checks rate limit for API key
 5. LLM_connector forwards request to local LLM (aiohttp client)
 6. Local LLM streams response tokens
-7. LLM_connector forwards each token through tunnel (no buffering)
+7. LLM_connector forwards each token through relay (no buffering)
 8. LLM_broker delivers response to external user
 9. Both components log request with correlation ID and latency metrics
 
@@ -209,7 +209,7 @@ Response flow:
 │  ┌──────────────┐      ┌──────────────┐      ┌──────────────┐      ┌─────────────┐
 │  │ llm.viljo.se │ <--> │ LLM_connector│ <--> │  LLM_broker  │ <--> │ Test client │
 │  │ /v1          │      │ (under test) │ NAT  │ (under test) │      │ (pytest)    │
-│  │              │      │              │ tunnel              │      │             │
+│  │              │      │              │ relay              │      │             │
 │  │ simulates    │      │ src/remotellm│      │ src/remotellm│      │ simulates   │
 │  │ local LLM    │      │ /connector/  │      │ /broker/     │      │ external    │
 │  │              │      │              │      │              │      │ user        │
@@ -218,10 +218,10 @@ Response flow:
 └────────────────────────────────────────────────────────────────────────────┘
 
 Request flow:
-  Test client -> LLM_broker -> [NAT tunnel] -> LLM_connector -> llm.viljo.se/v1
+  Test client -> LLM_broker -> [NAT relay] -> LLM_connector -> llm.viljo.se/v1
 
 Response flow:
-  llm.viljo.se/v1 -> LLM_connector -> [NAT tunnel] -> LLM_broker -> Test client
+  llm.viljo.se/v1 -> LLM_connector -> [NAT relay] -> LLM_broker -> Test client
 ```
 
 **Note**: In E2E tests, both `LLM_connector` and `LLM_broker` are the actual production code from `src/remotellm/`. The test client simulates external users making API calls.
@@ -232,7 +232,7 @@ Response flow:
 
 **Rationale**:
 - Tests the real production code, not mocks
-- aiohttp WebSocket server accepts tunnel connections
+- aiohttp WebSocket server accepts relay connections
 - Full control over configuration for negative testing
 - Runs in-process with pytest-asyncio
 
@@ -291,7 +291,7 @@ async def connector(broker):
 | `test_e2e_auth_rejection` | Invalid API key | Connector rejects |
 | `test_e2e_rate_limit` | Exceed rate limit | 429 response |
 | `test_e2e_llm_unavailable` | LLM proxy down | 502 response |
-| `test_e2e_tunnel_reconnect` | Tunnel drops mid-request | Connector recovers |
+| `test_e2e_relay_reconnect` | Relay drops mid-request | Connector recovers |
 | `test_e2e_graceful_shutdown` | Shutdown with in-flight | Request completes |
 
 ### 12. Test Dependencies (Additional)
@@ -306,7 +306,7 @@ aioresponses>=0.7.0       # Async HTTP mocking (for unit tests)
 
 ```yaml
 # tests/e2e/config.yaml
-mock_tunnel_port: 9999
+mock_relay_port: 9999
 llm_proxy_port: 11434
 llm_proxy_target: "https://llm.viljo.se/v1"
 llm_proxy_mode: "replay"  # or "live" or "record"

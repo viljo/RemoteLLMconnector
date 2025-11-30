@@ -8,7 +8,7 @@ import signal
 from remotellm.connector.config import ConnectorConfig
 from remotellm.connector.health import HealthServer
 from remotellm.connector.llm_client import LLMClient
-from remotellm.connector.tunnel_client import TunnelClient
+from remotellm.connector.relay_client import RelayClient
 from remotellm.shared.logging import (
     bind_correlation_id,
     clear_context,
@@ -17,7 +17,7 @@ from remotellm.shared.logging import (
 )
 from remotellm.shared.protocol import (
     RequestPayload,
-    TunnelMessage,
+    RelayMessage,
     create_error_message,
     create_response_message,
     create_stream_chunk_message,
@@ -43,13 +43,13 @@ class Connector:
             ssl_verify=config.llm_ssl_verify,
             host_header=config.llm_host,
         )
-        self.tunnel_client: TunnelClient | None = None
+        self.relay_client: RelayClient | None = None
         self.health_server: HealthServer | None = None
         self._shutdown_event = asyncio.Event()
         self._in_flight_requests: set[str] = set()
 
-    async def _handle_request(self, message: TunnelMessage) -> None:
-        """Handle an incoming request from the tunnel.
+    async def _handle_request(self, message: RelayMessage) -> None:
+        """Handle an incoming request from the relay.
 
         Args:
             message: The request message
@@ -96,8 +96,8 @@ class Connector:
                 error=str(e),
                 code="internal_error",
             )
-            if self.tunnel_client:
-                await self.tunnel_client.send_message(error_msg)
+            if self.relay_client:
+                await self.relay_client.send_message(error_msg)
         finally:
             self._in_flight_requests.discard(correlation_id)
             clear_context()
@@ -135,7 +135,7 @@ class Connector:
                 headers={k: v for k, v in headers.items() if k.lower() != "transfer-encoding"},
                 body=encoded_body,
             )
-            await self.tunnel_client.send_message(response_msg)
+            await self.relay_client.send_message(response_msg)
             logger.info("Sent response", status=status)
 
         except TimeoutError:
@@ -146,7 +146,7 @@ class Connector:
                 error="Request timeout",
                 code="timeout",
             )
-            await self.tunnel_client.send_message(error_msg)
+            await self.relay_client.send_message(error_msg)
         except Exception as e:
             logger.error("LLM request failed", error=str(e))
             error_msg = create_error_message(
@@ -155,7 +155,7 @@ class Connector:
                 error="LLM server unavailable",
                 code="llm_unavailable",
             )
-            await self.tunnel_client.send_message(error_msg)
+            await self.relay_client.send_message(error_msg)
 
     async def _handle_streaming_request(
         self,
@@ -203,7 +203,7 @@ class Connector:
                             error=error_body.decode("utf-8", errors="replace"),
                             code="llm_error",
                         )
-                        await self.tunnel_client.send_message(error_msg)
+                        await self.relay_client.send_message(error_msg)
                         return
                     first_chunk = False
                     continue
@@ -214,11 +214,11 @@ class Connector:
                     chunk=data.decode("utf-8", errors="replace"),
                     done=False,
                 )
-                await self.tunnel_client.send_message(chunk_msg)
+                await self.relay_client.send_message(chunk_msg)
 
             # Send stream end
             end_msg = create_stream_end_message(correlation_id)
-            await self.tunnel_client.send_message(end_msg)
+            await self.relay_client.send_message(end_msg)
             logger.info("Streaming response complete")
 
         except TimeoutError:
@@ -229,7 +229,7 @@ class Connector:
                 error="Request timeout",
                 code="timeout",
             )
-            await self.tunnel_client.send_message(error_msg)
+            await self.relay_client.send_message(error_msg)
         except Exception as e:
             logger.error("Streaming request failed", error=str(e))
             error_msg = create_error_message(
@@ -238,7 +238,7 @@ class Connector:
                 error="LLM server unavailable",
                 code="llm_unavailable",
             )
-            await self.tunnel_client.send_message(error_msg)
+            await self.relay_client.send_message(error_msg)
 
     def _normalize_model_name(self, model_id: str) -> str:
         """Normalize a model ID to a clean model name.
@@ -349,8 +349,8 @@ class Connector:
             if not models:
                 logger.warning("No models discovered, connector will still connect")
 
-        # Create tunnel client with models list
-        self.tunnel_client = TunnelClient(
+        # Create relay client with models list
+        self.relay_client = RelayClient(
             broker_url=self.config.broker_url,
             broker_token=self.config.broker_token,
             request_handler=self._handle_request,
@@ -365,7 +365,7 @@ class Connector:
         if self.config.health_port is not None:
             self.health_server = HealthServer(
                 port=self.config.health_port,
-                tunnel_client=self.tunnel_client,
+                relay_client=self.relay_client,
                 llm_client=self.llm_client,
             )
             await self.health_server.start()
@@ -375,9 +375,9 @@ class Connector:
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, lambda: asyncio.create_task(self.shutdown()))
 
-        # Run tunnel client
+        # Run relay client
         try:
-            await self.tunnel_client.run()
+            await self.relay_client.run()
         except Exception as e:
             logger.error("Connector error", error=str(e))
         finally:
@@ -396,8 +396,8 @@ class Connector:
                     break
                 await asyncio.sleep(1)
 
-        if self.tunnel_client:
-            await self.tunnel_client.stop()
+        if self.relay_client:
+            await self.relay_client.stop()
 
     async def cleanup(self) -> None:
         """Clean up resources."""

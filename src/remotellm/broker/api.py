@@ -12,13 +12,13 @@ from remotellm.shared.logging import bind_correlation_id, clear_context, get_log
 from remotellm.shared.models import ErrorDetail, ErrorResponse
 from remotellm.shared.protocol import (
     MessageType,
-    TunnelMessage,
+    RelayMessage,
     create_request_message,
 )
 
 if TYPE_CHECKING:
     from remotellm.broker.router import ModelRouter
-    from remotellm.broker.tunnel_server import TunnelServer
+    from remotellm.broker.relay_server import RelayServer
 
 logger = get_logger(__name__)
 
@@ -46,7 +46,7 @@ class BrokerAPI:
 
     def __init__(
         self,
-        tunnel_server: "TunnelServer",
+        relay_server: "RelayServer",
         router: "ModelRouter",
         user_api_keys: list[str] | None = None,
         request_timeout: float = 300.0,
@@ -54,12 +54,12 @@ class BrokerAPI:
         """Initialize the API server.
 
         Args:
-            tunnel_server: The tunnel server for routing requests
+            relay_server: The relay server for routing requests
             router: The model router for request routing
             user_api_keys: Valid API keys for user authentication (empty = no auth)
             request_timeout: Request timeout in seconds
         """
-        self.tunnel_server = tunnel_server
+        self.relay_server = relay_server
         self.router = router
         self.user_api_keys = user_api_keys or []
         self.request_timeout = request_timeout
@@ -161,7 +161,7 @@ class BrokerAPI:
             connector_id, llm_api_key = route
 
             # Verify connector is still connected
-            connector = self.tunnel_server._connectors.get(connector_id)
+            connector = self.relay_server._connectors.get(connector_id)
             if not connector:
                 logger.error("Connector disconnected", connector_id=connector_id, model=model)
                 return create_error_response(
@@ -180,7 +180,7 @@ class BrokerAPI:
             encoded_body = base64.b64encode(body).decode("ascii")
 
             # Create request message with injected llm_api_key (T021)
-            tunnel_msg = create_request_message(
+            relay_msg = create_request_message(
                 correlation_id=correlation_id,
                 method=request.method,
                 path=request.path,
@@ -198,9 +198,9 @@ class BrokerAPI:
             )
 
             if is_streaming:
-                return await self._handle_streaming_response(connector_id, tunnel_msg, request)
+                return await self._handle_streaming_response(connector_id, relay_msg, request)
             else:
-                return await self._handle_non_streaming_response(connector_id, tunnel_msg)
+                return await self._handle_non_streaming_response(connector_id, relay_msg)
 
         except Exception as e:
             logger.error("Request handling error", error=str(e))
@@ -215,7 +215,7 @@ class BrokerAPI:
     async def _handle_non_streaming_response(
         self,
         connector_id: str,
-        message: TunnelMessage,
+        message: RelayMessage,
     ) -> web.Response:
         """Handle a non-streaming response.
 
@@ -227,7 +227,7 @@ class BrokerAPI:
             HTTP response
         """
         try:
-            response = await self.tunnel_server.send_request(
+            response = await self.relay_server.send_request(
                 connector_id=connector_id,
                 message=message,
                 timeout=self.request_timeout,
@@ -279,7 +279,7 @@ class BrokerAPI:
     async def _handle_streaming_response(
         self,
         connector_id: str,
-        message: TunnelMessage,
+        message: RelayMessage,
         request: web.Request,
     ) -> web.StreamResponse:
         """Handle a streaming response.
@@ -303,7 +303,7 @@ class BrokerAPI:
 
         try:
             # Get streaming queue
-            queue = await self.tunnel_server.send_request_streaming(
+            queue = await self.relay_server.send_request_streaming(
                 connector_id=connector_id,
                 message=message,
             )

@@ -9,7 +9,7 @@ from remotellm.shared.logging import get_logger
 
 if TYPE_CHECKING:
     from remotellm.connector.llm_client import LLMClient
-    from remotellm.connector.tunnel_client import TunnelClient
+    from remotellm.connector.relay_client import RelayClient
 
 logger = get_logger(__name__)
 
@@ -20,18 +20,18 @@ class HealthServer:
     def __init__(
         self,
         port: int,
-        tunnel_client: "TunnelClient",
+        relay_client: "RelayClient",
         llm_client: "LLMClient",
     ):
         """Initialize the health server.
 
         Args:
             port: Port to bind to
-            tunnel_client: Tunnel client for status
+            relay_client: Relay client for status
             llm_client: LLM client for health checks
         """
         self.port = port
-        self.tunnel_client = tunnel_client
+        self.relay_client = relay_client
         self.llm_client = llm_client
         self._start_time = time.time()
         self._app = web.Application()
@@ -62,26 +62,26 @@ class HealthServer:
 
         Returns health status of the connector with registered models (T044).
         """
-        from remotellm.connector.tunnel_client import ConnectionState
+        from remotellm.connector.relay_client import ConnectionState
 
-        tunnel_connected = self.tunnel_client.state == ConnectionState.CONNECTED
+        relay_connected = self.relay_client.state == ConnectionState.CONNECTED
         llm_available = await self.llm_client.check_health()
         uptime = time.time() - self._start_time
 
         # Get registered models
-        models = self.tunnel_client.models
+        models = self.relay_client.models
 
-        # Overall status is healthy if tunnel is connected
+        # Overall status is healthy if relay is connected
         # LLM availability is informational
-        status = "healthy" if tunnel_connected else "unhealthy"
-        http_status = 200 if tunnel_connected else 503
+        status = "healthy" if relay_connected else "unhealthy"
+        http_status = 200 if relay_connected else 503
 
         return web.json_response(
             {
                 "status": status,
-                "tunnel_connected": tunnel_connected,
-                "tunnel_state": self.tunnel_client.state.value,
-                "tunnel_session_id": self.tunnel_client.session_id,
+                "relay_connected": relay_connected,
+                "relay_state": self.relay_client.state.value,
+                "relay_session_id": self.relay_client.session_id,
                 "llm_available": llm_available,
                 "models": models,
                 "uptime_seconds": round(uptime, 1),
@@ -92,18 +92,18 @@ class HealthServer:
     async def _handle_ready(self, request: web.Request) -> web.Response:  # noqa: ARG002
         """Handle GET /ready endpoint.
 
-        Returns readiness status - ready when both tunnel and LLM are available.
+        Returns readiness status - ready when both relay and LLM are available.
         """
-        from remotellm.connector.tunnel_client import ConnectionState
+        from remotellm.connector.relay_client import ConnectionState
 
-        tunnel_connected = self.tunnel_client.state == ConnectionState.CONNECTED
+        relay_connected = self.relay_client.state == ConnectionState.CONNECTED
         llm_available = await self.llm_client.check_health()
-        ready = tunnel_connected and llm_available
+        ready = relay_connected and llm_available
 
         return web.json_response(
             {
                 "ready": ready,
-                "tunnel_connected": tunnel_connected,
+                "relay_connected": relay_connected,
                 "llm_available": llm_available,
             },
             status=200 if ready else 503,

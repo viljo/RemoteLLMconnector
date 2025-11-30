@@ -18,7 +18,7 @@ from .users import UserRole, UserStore
 
 if TYPE_CHECKING:
     from .router import ModelRouter
-    from .tunnel_server import TunnelServer
+    from .relay_server import RelayServer
 
 log = structlog.get_logger()
 
@@ -99,7 +99,7 @@ class AdminHandler:
         request_logger: RequestLogger,
         preprompt_store: PrepromptStore | None = None,
         connector_store: ConnectorStore | None = None,
-        tunnel_server: "TunnelServer | None" = None,
+        relay_server: "RelayServer | None" = None,
     ) -> None:
         """Initialize the admin handler.
 
@@ -109,14 +109,14 @@ class AdminHandler:
             request_logger: Request logger for viewing logs
             preprompt_store: Preprompt storage instance
             connector_store: Connector storage for approval workflow
-            tunnel_server: Tunnel server for sending approval/revoke notifications
+            relay_server: Relay server for sending approval/revoke notifications
         """
         self.user_store = user_store
         self.router = router
         self.request_logger = request_logger
         self.preprompt_store = preprompt_store
         self.connector_store = connector_store
-        self.tunnel_server = tunnel_server
+        self.relay_server = relay_server
 
     def setup_routes(self, app: web.Application) -> None:
         """Register admin routes with the application."""
@@ -381,10 +381,10 @@ class AdminHandler:
         pending_connectors = self.connector_store.get_pending()
         approved_connectors = self.connector_store.get_approved()
 
-        # Enhance with connection status from tunnel server
+        # Enhance with connection status from relay server
         pending_with_status = []
         for conn in pending_connectors:
-            is_connected = self.tunnel_server.is_connector_connected(conn.connector_id) if self.tunnel_server else False
+            is_connected = self.relay_server.is_connector_connected(conn.connector_id) if self.relay_server else False
             pending_with_status.append({
                 "connector": conn,
                 "is_connected": is_connected,
@@ -392,7 +392,7 @@ class AdminHandler:
 
         approved_with_status = []
         for conn in approved_connectors:
-            is_connected = self.tunnel_server.is_connector_connected(conn.connector_id) if self.tunnel_server else False
+            is_connected = self.relay_server.is_connector_connected(conn.connector_id) if self.relay_server else False
             approved_with_status.append({
                 "connector": conn,
                 "is_connected": is_connected,
@@ -428,8 +428,8 @@ class AdminHandler:
             raise web.HTTPFound(f"/admin/connectors?message=Connector+{connector_id}+not+found+or+not+pending&type=error")
 
         # Notify connector if connected
-        if self.tunnel_server:
-            await self.tunnel_server.notify_approval(connector_id, api_key)
+        if self.relay_server:
+            await self.relay_server.notify_approval(connector_id, api_key)
 
         log.info("Connector approved", connector_id=connector_id)
         raise web.HTTPFound(f"/admin/connectors?message=Connector+{connector_id}+approved&type=success")
@@ -448,8 +448,8 @@ class AdminHandler:
             raise web.HTTPFound(f"/admin/connectors?message=Connector+{connector_id}+not+found&type=error")
 
         # Notify connector if connected
-        if self.tunnel_server:
-            await self.tunnel_server.notify_revoke(connector_id, "API key revoked by admin")
+        if self.relay_server:
+            await self.relay_server.notify_revoke(connector_id, "API key revoked by admin")
 
         log.info("Connector revoked", connector_id=connector_id)
         raise web.HTTPFound(f"/admin/connectors?message=Connector+{connector_id}+revoked&type=success")
@@ -468,8 +468,8 @@ class AdminHandler:
             raise web.HTTPFound(f"/admin/connectors?message=Connector+{connector_id}+not+found&type=error")
 
         # Close connection if still connected
-        if self.tunnel_server:
-            await self.tunnel_server.notify_revoke(connector_id, "Connector deleted by admin")
+        if self.relay_server:
+            await self.relay_server.notify_revoke(connector_id, "Connector deleted by admin")
 
         log.info("Connector deleted", connector_id=connector_id)
         raise web.HTTPFound(f"/admin/connectors?message=Connector+{connector_id}+deleted&type=success")

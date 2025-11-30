@@ -66,7 +66,7 @@ As a local LLM operator, I want to run the connector and broker as system servic
 **Acceptance Scenarios**:
 
 1. **Given** the connector is installed as a service, **When** the system boots, **Then** the connector starts automatically and connects to configured endpoints.
-2. **Given** the broker is installed as a service, **When** the system boots, **Then** the broker starts automatically and accepts tunnel connections.
+2. **Given** the broker is installed as a service, **When** the system boots, **Then** the broker starts automatically and accepts relay connections.
 3. **Given** the connector service crashes, **When** the service manager detects the failure, **Then** the service restarts automatically within 10 seconds.
 4. **Given** I want to manage the service, **When** I use standard service commands (start/stop/status), **Then** I can control the service without custom scripts.
 
@@ -85,7 +85,7 @@ As a local LLM operator, I want to run the connector and broker as system servic
 ### Functional Requirements
 
 - **FR-001**: System MUST connect to a local LLM server using a configurable endpoint URL
-- **FR-002**: System MUST initiate an outbound persistent tunnel to the external API provider (no inbound ports required, NAT-friendly)
+- **FR-002**: System MUST initiate an outbound persistent relay to the external API provider (no inbound ports required, NAT-friendly)
 - **FR-003**: System MUST forward incoming API requests from external users to the local LLM without modifying request content
 - **FR-004**: System MUST forward LLM responses back to external users without modifying response content
 - **FR-005**: System MUST support streaming responses, forwarding tokens in real-time as generated
@@ -101,7 +101,7 @@ As a local LLM operator, I want to run the connector and broker as system servic
 
 ### Key Entities
 
-- **Connection**: Represents a connection to an endpoint. For local LLM: HTTP client connection. For external API: outbound persistent tunnel initiated by the connector (NAT-friendly, no inbound ports). Has state (connected, disconnected, reconnecting), endpoint URL, and health status.
+- **Connection**: Represents a connection to an endpoint. For local LLM: HTTP client connection. For external API: outbound persistent relay initiated by the connector (NAT-friendly, no inbound ports). Has state (connected, disconnected, reconnecting), endpoint URL, and health status.
 - **Request**: An API request flowing through the bridge. Has correlation ID, timestamp, source (external user), destination (local LLM), and status.
 - **Configuration**: Runtime settings including local LLM endpoint, external API credentials, and logging preferences.
 
@@ -130,6 +130,6 @@ As a local LLM operator, I want to run the connector and broker as system servic
 
 ### Session 2025-11-29
 
-- Q: How does the connector receive requests from external users? → A: Connector initiates outbound tunnel to external provider; requests flow through tunnel (NAT-friendly)
-- Q: Where does API key authentication occur? → A: Connector validates API keys after receiving requests through tunnel (operator controls access)
+- Q: How does the connector receive requests from external users? → A: Connector initiates outbound relay to external provider; requests flow through relay (NAT-friendly)
+- Q: Where does API key authentication occur? → A: Connector validates API keys after receiving requests through relay (operator controls access)
 - Q: What is the target concurrency? → A: 10 concurrent users (typical for local LLM capacity with tools like Cline)

@@ -1,4 +1,4 @@
-"""Tunnel protocol message types for connector-broker communication."""
+"""Relay protocol message types for connector-broker communication."""
 
 from enum import Enum
 from typing import Any
@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 
 class MessageType(str, Enum):
-    """Types of messages in the tunnel protocol."""
+    """Types of messages in the relay protocol."""
 
     # Connector → Broker
     AUTH = "AUTH"
@@ -28,8 +28,8 @@ class MessageType(str, Enum):
     REVOKED = "REVOKED"  # Connector API key revoked
 
 
-class TunnelMessage(BaseModel):
-    """Base message format for tunnel protocol."""
+class RelayMessage(BaseModel):
+    """Base message format for relay protocol."""
 
     type: MessageType
     id: str = Field(description="Correlation ID for request tracking")
@@ -123,22 +123,22 @@ def create_auth_message(
     token: str | None = None,
     models: list[str] | None = None,
     name: str | None = None,
-) -> TunnelMessage:
+) -> RelayMessage:
     """Create an AUTH message."""
     payload = AuthPayload(token=token, name=name, models=models or [])
-    return TunnelMessage(type=MessageType.AUTH, id=correlation_id, payload=payload.model_dump())
+    return RelayMessage(type=MessageType.AUTH, id=correlation_id, payload=payload.model_dump())
 
 
-def create_auth_ok_message(correlation_id: str, session_id: str) -> TunnelMessage:
+def create_auth_ok_message(correlation_id: str, session_id: str) -> RelayMessage:
     """Create an AUTH_OK message."""
     payload = AuthOkPayload(session_id=session_id)
-    return TunnelMessage(type=MessageType.AUTH_OK, id=correlation_id, payload=payload.model_dump())
+    return RelayMessage(type=MessageType.AUTH_OK, id=correlation_id, payload=payload.model_dump())
 
 
-def create_auth_fail_message(correlation_id: str, error: str) -> TunnelMessage:
+def create_auth_fail_message(correlation_id: str, error: str) -> RelayMessage:
     """Create an AUTH_FAIL message."""
     payload = AuthFailPayload(error=error)
-    return TunnelMessage(
+    return RelayMessage(
         type=MessageType.AUTH_FAIL, id=correlation_id, payload=payload.model_dump()
     )
 
@@ -150,74 +150,74 @@ def create_request_message(
     headers: dict[str, str],
     body: str = "",
     llm_api_key: str | None = None,
-) -> TunnelMessage:
+) -> RelayMessage:
     """Create a REQUEST message."""
     payload = RequestPayload(
         method=method, path=path, headers=headers, body=body, llm_api_key=llm_api_key
     )
-    return TunnelMessage(type=MessageType.REQUEST, id=correlation_id, payload=payload.model_dump())
+    return RelayMessage(type=MessageType.REQUEST, id=correlation_id, payload=payload.model_dump())
 
 
 def create_response_message(
     correlation_id: str, status: int, headers: dict[str, str], body: str = ""
-) -> TunnelMessage:
+) -> RelayMessage:
     """Create a RESPONSE message."""
     payload = ResponsePayload(status=status, headers=headers, body=body)
-    return TunnelMessage(type=MessageType.RESPONSE, id=correlation_id, payload=payload.model_dump())
+    return RelayMessage(type=MessageType.RESPONSE, id=correlation_id, payload=payload.model_dump())
 
 
 def create_stream_chunk_message(
     correlation_id: str, chunk: str, done: bool = False
-) -> TunnelMessage:
+) -> RelayMessage:
     """Create a STREAM_CHUNK message."""
     payload = StreamChunkPayload(chunk=chunk, done=done)
-    return TunnelMessage(
+    return RelayMessage(
         type=MessageType.STREAM_CHUNK, id=correlation_id, payload=payload.model_dump()
     )
 
 
-def create_stream_end_message(correlation_id: str) -> TunnelMessage:
+def create_stream_end_message(correlation_id: str) -> RelayMessage:
     """Create a STREAM_END message."""
     payload = StreamEndPayload()
-    return TunnelMessage(
+    return RelayMessage(
         type=MessageType.STREAM_END, id=correlation_id, payload=payload.model_dump()
     )
 
 
-def create_error_message(correlation_id: str, status: int, error: str, code: str) -> TunnelMessage:
+def create_error_message(correlation_id: str, status: int, error: str, code: str) -> RelayMessage:
     """Create an ERROR message."""
     payload = ErrorPayload(status=status, error=error, code=code)
-    return TunnelMessage(type=MessageType.ERROR, id=correlation_id, payload=payload.model_dump())
+    return RelayMessage(type=MessageType.ERROR, id=correlation_id, payload=payload.model_dump())
 
 
-def create_ping_message(correlation_id: str) -> TunnelMessage:
+def create_ping_message(correlation_id: str) -> RelayMessage:
     """Create a PING message."""
-    return TunnelMessage(type=MessageType.PING, id=correlation_id, payload={})
+    return RelayMessage(type=MessageType.PING, id=correlation_id, payload={})
 
 
-def create_pong_message(correlation_id: str) -> TunnelMessage:
+def create_pong_message(correlation_id: str) -> RelayMessage:
     """Create a PONG message."""
-    return TunnelMessage(type=MessageType.PONG, id=correlation_id, payload={})
+    return RelayMessage(type=MessageType.PONG, id=correlation_id, payload={})
 
 
-def create_cancel_message(correlation_id: str) -> TunnelMessage:
+def create_cancel_message(correlation_id: str) -> RelayMessage:
     """Create a CANCEL message."""
-    return TunnelMessage(type=MessageType.CANCEL, id=correlation_id, payload={})
+    return RelayMessage(type=MessageType.CANCEL, id=correlation_id, payload={})
 
 
-def create_pending_message(correlation_id: str, connector_id: str, message: str | None = None) -> TunnelMessage:
+def create_pending_message(correlation_id: str, connector_id: str, message: str | None = None) -> RelayMessage:
     """Create a PENDING message."""
     payload = PendingPayload(connector_id=connector_id, message=message or "Waiting for admin approval")
-    return TunnelMessage(type=MessageType.PENDING, id=correlation_id, payload=payload.model_dump())
+    return RelayMessage(type=MessageType.PENDING, id=correlation_id, payload=payload.model_dump())
 
 
-def create_approved_message(correlation_id: str, api_key: str) -> TunnelMessage:
+def create_approved_message(correlation_id: str, api_key: str) -> RelayMessage:
     """Create an APPROVED message."""
     payload = ApprovedPayload(api_key=api_key)
-    return TunnelMessage(type=MessageType.APPROVED, id=correlation_id, payload=payload.model_dump())
+    return RelayMessage(type=MessageType.APPROVED, id=correlation_id, payload=payload.model_dump())
 
 
-def create_revoked_message(correlation_id: str, reason: str | None = None) -> TunnelMessage:
+def create_revoked_message(correlation_id: str, reason: str | None = None) -> RelayMessage:
     """Create a REVOKED message."""
     payload = RevokedPayload(reason=reason or "API key revoked by admin")
-    return TunnelMessage(type=MessageType.REVOKED, id=correlation_id, payload=payload.model_dump())
+    return RelayMessage(type=MessageType.REVOKED, id=correlation_id, payload=payload.model_dump())

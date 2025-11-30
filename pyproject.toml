@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Anders" }]
-keywords = ["llm", "api", "bridge", "tunnel", "openai"]
+keywords = ["llm", "api", "bridge", "relay", "openai"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",

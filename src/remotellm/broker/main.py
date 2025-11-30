@@ -22,7 +22,7 @@ from remotellm.broker.health import HealthServer
 from remotellm.broker.preprompts import PrepromptStore
 from remotellm.broker.router import ModelRouter
 from remotellm.broker.test_auth import TestAuthHandler
-from remotellm.broker.tunnel_server import TunnelServer
+from remotellm.broker.relay_server import RelayServer
 from remotellm.broker.users import UserStore
 from remotellm.shared.logging import configure_logging, get_logger
 
@@ -48,7 +48,7 @@ class Broker:
         for cfg in config.connector_configs:
             connector_configs[cfg.token] = cfg.llm_api_key
 
-        self.tunnel_server = TunnelServer(
+        self.relay_server = RelayServer(
             host=config.host,
             port=config.port,  # Same port, /ws path
             connector_tokens=config.connector_tokens,
@@ -63,14 +63,14 @@ class Broker:
         self.request_logger = RequestLogger(max_logs=100)
 
         self.api = BrokerAPI(
-            tunnel_server=self.tunnel_server,
+            relay_server=self.relay_server,
             router=self.router,
             user_api_keys=config.user_api_keys,
             request_timeout=config.request_timeout,
         )
         self.health_server = HealthServer(
             port=config.health_port,
-            tunnel_server=self.tunnel_server,
+            relay_server=self.relay_server,
             router=self.router,
         )
         self._shutdown_event = asyncio.Event()
@@ -119,8 +119,8 @@ class Broker:
         # Create connector store (same directory as users file)
         connectors_file = users_file.parent / "connectors.yaml"
         self.connector_store = ConnectorStore(connectors_file)
-        # Pass connector_store to tunnel_server for approval workflow
-        self.tunnel_server.connector_store = self.connector_store
+        # Pass connector_store to relay_server for approval workflow
+        self.relay_server.connector_store = self.connector_store
 
         # Choose auth handler based on mode
         if self.config.test_mode:
@@ -149,7 +149,7 @@ class Broker:
             request_logger=self.request_logger,
             preprompt_store=self.preprompt_store,
             connector_store=self.connector_store,
-            tunnel_server=self.tunnel_server,
+            relay_server=self.relay_server,
         )
         self.admin_handler.setup_routes(app)
 
@@ -208,9 +208,9 @@ class Broker:
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, lambda: asyncio.create_task(self.shutdown()))
 
-        # Set up WebSocket tunnel route on main HTTP server
-        self.tunnel_server.setup_routes(self.api.app)
-        await self.tunnel_server.start()
+        # Set up WebSocket relay route on main HTTP server
+        self.relay_server.setup_routes(self.api.app)
+        await self.relay_server.start()
 
         # Start health server
         await self.health_server.start()
@@ -244,8 +244,8 @@ class Broker:
         # Stop health server
         await self.health_server.stop()
 
-        # Stop tunnel server
-        await self.tunnel_server.stop()
+        # Stop relay server
+        await self.relay_server.stop()
 
         logger.info("Broker stopped")
 

@@ -1,4 +1,4 @@
-# RemoteLLM Broker Dockerfile
+# RemoteLLM Connector Dockerfile
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -22,8 +22,8 @@ USER remotellm
 # Set UV cache directory to writable location
 ENV UV_CACHE_DIR=/app/.uv-cache
 
-# Expose ports: API (8443), WebSocket relay (8444), Health (8080)
-EXPOSE 8443 8444 8080
+# Expose health port
+EXPOSE 8081
 
-# Default command runs the broker
-ENTRYPOINT ["uv", "run", "python", "-m", "remotellm.broker"]
+# Default command runs the connector
+ENTRYPOINT ["uv", "run", "python", "-m", "remotellm.connector"]

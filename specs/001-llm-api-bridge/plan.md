@@ -27,7 +27,7 @@ Extend the existing GitLab OAuth authentication portal with role-based access co
 |-----------|--------|-------|
 | I. Transparent Proxy | PASS | Admin UI is separate from proxy flow |
 | II. Security-First | PASS | Admin requires auth, uses HTTPS, secrets protected |
-| III. Connection Reliability | PASS | Admin UI is informational, doesn't affect tunnel |
+| III. Connection Reliability | PASS | Admin UI is informational, doesn't affect relay |
 | IV. Protocol Compatibility | PASS | No protocol changes needed |
 | V. Observability | PASS | Adds visibility into connector state |
 

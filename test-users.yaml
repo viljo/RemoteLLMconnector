@@ -1,0 +1,8 @@
+users:
+- gitlab_username: admin
+  gitlab_id: 959175
+  api_key: sk-868bac2f3390ec90048a20fe51eb00b3
+  role: admin
+  created_at: '2025-11-30T08:40:09.153977'
+  last_used: '2025-11-30T08:41:17.510250'
+  blocked: false

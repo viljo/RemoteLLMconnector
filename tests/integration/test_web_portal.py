@@ -250,7 +250,7 @@ class TestModelRouterIntegration:
         connector_id = "test-connector-1"
         models = ["gpt-4", "gpt-3.5-turbo"]
 
-        # Register callback (normally called by tunnel server)
+        # Register callback (normally called by relay server)
         router.on_connector_registered(
             connector_id=connector_id,
             models=models,

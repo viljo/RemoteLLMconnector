@@ -41,7 +41,7 @@ def load_connector_configs(config_file: Path | None) -> list[ConnectorConfigEntr
     envvar="REMOTELLM_BROKER_PORT",
     default=8443,
     type=int,
-    help="Port for the HTTP API (WebSocket tunnel will be on port+1)",
+    help="Port for the HTTP API (WebSocket relay at /ws path)",
 )
 @click.option(
     "--connector-token",

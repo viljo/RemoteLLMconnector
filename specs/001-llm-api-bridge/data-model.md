@@ -10,14 +10,14 @@
 
 - Pure transparent proxy - **NO API key handling**
 - Connects to local LLM
-- Initiates tunnel to broker
+- Initiates relay to broker
 - Registers its available models with broker
 - Receives LLM API key per-request from broker (if needed)
 
 ### LLM_broker (runs on server, single instance)
 
 - **Manages ALL API keys** (user keys + LLM keys)
-- Accepts tunnel connections from multiple connectors
+- Accepts relay connections from multiple connectors
 - Validates user API keys
 - Routes requests to appropriate connector based on model
 - Injects LLM API key into requests before forwarding
@@ -66,7 +66,7 @@ connectors:
     llm_api_key: "sk-ant-xxx"           # Injected by broker
 ```
 
-### TunnelMessage (shared protocol)
+### RelayMessage (shared protocol)
 
 ```python
 {
@@ -144,7 +144,7 @@ External User                LLM_broker                    Connector            
      |                           |   "gpt-4o" → conn-def456     |                        |
      |                           |   llm_api_key: sk-openai-xxx |                        |
      |                           |                              |                        |
-     |                           |-- REQUEST (tunnel) --------->|                        |
+     |                           |-- REQUEST (relay) --------->|                        |
      |                           |   + llm_api_key in payload   |                        |
      |                           |                              |                        |
      |                           |                              |-- POST /v1/chat ------>|
@@ -205,10 +205,10 @@ Connector                    LLM_broker
 | Key Type | Location | Purpose | Validated By |
 |----------|----------|---------|--------------|
 | User API Key | Broker config | External user auth | Broker API |
-| Connector Token | Both configs | Connector-broker auth | Broker tunnel |
+| Connector Token | Both configs | Connector-broker auth | Broker relay |
 | LLM API Key | Broker config | LLM server auth | LLM server |
 
-**Key never leaves broker config** - only injected into tunnel REQUEST payloads.
+**Key never leaves broker config** - only injected into relay REQUEST payloads.
 
 ## Error Handling
 
@@ -224,7 +224,7 @@ Connector                    LLM_broker
 
 ## Security Considerations
 
-1. **LLM API keys** only transmitted over encrypted tunnel (WSS)
+1. **LLM API keys** only transmitted over encrypted relay (WSS)
 2. **Keys in transit** only broker→connector, never to external users
 3. **Connector compromise** doesn't expose keys (no local storage)
 4. **Key rotation** happens in one place (broker config)

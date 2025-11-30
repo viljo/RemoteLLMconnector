@@ -1,0 +1,8 @@
+# Test Runner for Docker Compose integration tests
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY test_startup.py .
+
+CMD ["python", "test_startup.py"]

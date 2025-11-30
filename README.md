@@ -1,10 +1,10 @@
 # RemoteLLMconnector
 
-LLM API Bridge - Expose local LLM servers externally via a NAT-friendly tunnel.
+LLM API Bridge - Expose local LLM servers externally via a NAT-friendly relay.
 
 ## Overview
 
-RemoteLLMconnector enables local LLM servers (Ollama, llama.cpp, vLLM, etc.) to be accessed from the internet through an OpenAI-compatible API. The system uses a WebSocket tunnel that works behind NAT/firewalls without port forwarding.
+RemoteLLMconnector enables local LLM servers (Ollama, llama.cpp, vLLM, etc.) to be accessed from the internet through an OpenAI-compatible API. The system uses a WebSocket relay that works behind NAT/firewalls without port forwarding.
 
 ### Architecture
 
@@ -17,10 +17,10 @@ External User                    Cloud Server                    Your Networks
      |                          [Broker]                             |
      |                        (Model Router)                         |
      |                               |                               |
-     |                               |<----- WebSocket Tunnel ----->[Connector A]
+     |                               |<----- WebSocket Relay ------>[Connector A]
      |                               |       (serves: gpt-4)         [OpenAI API]
      |                               |                               |
-     |                               |<----- WebSocket Tunnel ----->[Connector B]
+     |                               |<----- WebSocket Relay ------>[Connector B]
      |                               |       (serves: llama3.2)      [Ollama]
      |                               |                               |
      |<------ SSE Response ----------|                               |
@@ -30,7 +30,7 @@ External User                    Cloud Server                    Your Networks
 
 ### Components
 
-- **Broker**: Runs on a cloud server, accepts WebSocket tunnel connections, exposes OpenAI-compatible HTTP API
+- **Broker**: Runs on a cloud server, accepts WebSocket relay connections, exposes OpenAI-compatible HTTP API
 - **Connector**: Runs locally, connects to broker via WebSocket, forwards requests to local LLM
 
 ## Installation
@@ -92,7 +92,7 @@ The broker routes the request to the connector serving `llama3.2` and injects th
 | Option | Env Variable | Default | Description |
 |--------|--------------|---------|-------------|
 | `--host` | `REMOTELLM_BROKER_HOST` | `0.0.0.0` | Host to bind to |
-| `--port` | `REMOTELLM_BROKER_PORT` | `8443` | HTTP API port (tunnel: port+1) |
+| `--port` | `REMOTELLM_BROKER_PORT` | `8443` | HTTP API port (relay at /ws) |
 | `--connector-token` | `REMOTELLM_BROKER_CONNECTOR_TOKENS` | - | Token(s) for connector auth |
 | `--user-api-key` | `REMOTELLM_BROKER_USER_API_KEYS` | - | API key(s) for external users |
 | `--connector-config` | `REMOTELLM_BROKER_CONNECTOR_CONFIG` | - | YAML file with connector configs |
@@ -146,11 +146,11 @@ curl http://localhost:8080/health
 
 # Connector health
 curl http://localhost:8081/health
-# {"status": "healthy", "tunnel_connected": true, "llm_available": true, "models": ["llama3.2"], ...}
+# {"status": "healthy", "relay_connected": true, "llm_available": true, "models": ["llama3.2"], ...}
 
 # Connector readiness
 curl http://localhost:8081/ready
-# {"ready": true, "tunnel_connected": true, "llm_available": true}
+# {"ready": true, "relay_connected": true, "llm_available": true}
 ```
 
 ## Running as a Service
@@ -192,7 +192,7 @@ mypy src/remotellm/
 - **Model-based routing**: Requests routed to correct connector by model name
 - **Centralized API key management**: Broker manages all API keys (user + LLM)
 - Streaming responses (SSE)
-- NAT-friendly WebSocket tunnel
+- NAT-friendly WebSocket relay
 - Automatic reconnection with exponential backoff
 - Health monitoring endpoints with model visibility
 - Structured JSON logging with correlation IDs

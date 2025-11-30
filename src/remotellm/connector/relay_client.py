@@ -1,4 +1,4 @@
-"""WebSocket tunnel client for connecting to the broker."""
+"""WebSocket relay client for connecting to the broker."""
 
 import asyncio
 import uuid
@@ -17,7 +17,7 @@ from remotellm.shared.protocol import (
     MessageType,
     PendingPayload,
     RevokedPayload,
-    TunnelMessage,
+    RelayMessage,
     create_auth_message,
     create_ping_message,
     create_pong_message,
@@ -27,7 +27,7 @@ logger = get_logger(__name__)
 
 
 class ConnectionState(str, Enum):
-    """Tunnel connection states."""
+    """Relay connection states."""
 
     DISCONNECTED = "disconnected"
     CONNECTING = "connecting"
@@ -38,11 +38,11 @@ class ConnectionState(str, Enum):
 
 
 # Type for request handler callback
-RequestHandler = Callable[[TunnelMessage], Coroutine[Any, Any, None]]
+RequestHandler = Callable[[RelayMessage], Coroutine[Any, Any, None]]
 
 
-class TunnelClient:
-    """WebSocket client for tunnel connection to broker."""
+class RelayClient:
+    """WebSocket client for relay connection to broker."""
 
     def __init__(
         self,
@@ -56,7 +56,7 @@ class TunnelClient:
         reconnect_max_delay: float = 300.0,
         keepalive_interval: float = 60.0,
     ):
-        """Initialize the tunnel client.
+        """Initialize the relay client.
 
         Args:
             broker_url: WebSocket URL of the broker
@@ -191,7 +191,7 @@ class TunnelClient:
 
             # Wait for auth response
             response_raw = await asyncio.wait_for(self._ws.recv(), timeout=10.0)
-            response = TunnelMessage.model_validate_json(response_raw)
+            response = RelayMessage.model_validate_json(response_raw)
 
             if response.type == MessageType.AUTH_OK:
                 self._session_id = response.payload.get("session_id")
@@ -239,8 +239,8 @@ class TunnelClient:
                 await self._ws.close()
             return False
 
-    async def send_message(self, message: TunnelMessage) -> None:
-        """Send a message through the tunnel.
+    async def send_message(self, message: RelayMessage) -> None:
+        """Send a message through the relay.
 
         Args:
             message: The message to send
@@ -252,7 +252,7 @@ class TunnelClient:
             await self._ws.send(message.model_dump_json())
 
     async def run(self) -> None:
-        """Run the tunnel client, handling messages and reconnection."""
+        """Run the relay client, handling messages and reconnection."""
         self._running = True
 
         while self._running:
@@ -293,12 +293,12 @@ class TunnelClient:
                 break
 
             try:
-                message = TunnelMessage.model_validate_json(raw_message)
+                message = RelayMessage.model_validate_json(raw_message)
                 await self._handle_message(message)
             except Exception as e:
                 logger.error("Failed to process message", error=str(e))
 
-    async def _handle_message(self, message: TunnelMessage) -> None:
+    async def _handle_message(self, message: RelayMessage) -> None:
         """Handle an incoming message.
 
         Args:
@@ -326,7 +326,7 @@ class TunnelClient:
         else:
             logger.warning("Unexpected message type", type=message.type)
 
-    async def _handle_approved(self, message: TunnelMessage) -> None:
+    async def _handle_approved(self, message: RelayMessage) -> None:
         """Handle APPROVED message from broker.
 
         Args:
@@ -360,7 +360,7 @@ class TunnelClient:
         if self._ws:
             await self._ws.close()
 
-    async def _handle_revoked(self, message: TunnelMessage) -> None:
+    async def _handle_revoked(self, message: RelayMessage) -> None:
         """Handle REVOKED message from broker.
 
         Args:
@@ -443,7 +443,7 @@ class TunnelClient:
         await asyncio.sleep(delay)
 
     async def stop(self) -> None:
-        """Stop the tunnel client."""
+        """Stop the relay client."""
         self._running = False
         self._stop_keepalive()
         if self._ws:
@@ -452,4 +452,4 @@ class TunnelClient:
             except Exception:
                 pass  # Connection may already be closed
         self._state = ConnectionState.DISCONNECTED
-        logger.info("Tunnel client stopped")
+        logger.info("Relay client stopped")
