@@ -64,6 +64,7 @@ class AuthHandler:
         app.router.add_get("/auth/logout", self.handle_logout)
         app.router.add_get("/dashboard", self.handle_dashboard)
         app.router.add_get("/services", self.handle_services)
+        app.router.add_get("/chat", self.handle_chat)
 
     async def handle_index(self, request: web.Request) -> web.Response:
         """Handle the index page - redirect to dashboard or login."""
@@ -91,6 +92,7 @@ class AuthHandler:
         session["oauth_state"] = state
 
         context = {
+            "request": request,
             "gitlab_url": self.gitlab_url,
             "authorize_url": uri,
         }
@@ -194,6 +196,7 @@ class AuthHandler:
         models = self.router.available_models
 
         context = {
+            "request": request,
             "user": user,
             "api_key": user.api_key,
             "api_url": f"{self.public_url}/v1",
@@ -220,11 +223,41 @@ class AuthHandler:
         connectors = self.router.get_connector_info()
 
         context = {
+            "request": request,
             "user": user,
             "connectors": connectors,
             "is_admin": user.role == UserRole.ADMIN,
         }
         return aiohttp_jinja2.render_template("services.html", request, context)
+
+    async def handle_chat(self, request: web.Request) -> web.Response:
+        """Handle the chat page."""
+        session = await get_session(request)
+        user_data = session.get("user")
+
+        if not user_data:
+            raise web.HTTPFound("/auth/login")
+
+        # Get user from store
+        user = self.user_store.get_by_username(user_data["username"])
+        if user is None or user.blocked:
+            session.clear()
+            raise web.HTTPFound("/auth/login")
+
+        # Get available models from router with connector info
+        models = self.router.available_models
+        model_connectors = self.router.get_all_models_with_connectors()
+
+        context = {
+            "request": request,
+            "user": user,
+            "api_key": user.api_key,
+            "models": models,
+            "model_connectors": model_connectors,
+            "is_admin": user.role == UserRole.ADMIN,
+            "test_mode": False,
+        }
+        return aiohttp_jinja2.render_template("chat.html", request, context)
 
 
 def require_auth(handler):
