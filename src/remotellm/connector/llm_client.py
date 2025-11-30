@@ -170,42 +170,25 @@ class LLMClient:
                     yield chunk
 
     async def get_models(self) -> dict[str, Any]:
-        """Get list of available models from the LLM server.
+        """Get list of available models from OpenAI-compatible endpoint.
 
         Returns:
-            Dictionary with model list data
+            Dictionary with model list data in OpenAI format
         """
         session = await self._get_session()
+        async with session.get(f"{self.base_url}/v1/models") as resp:
+            if resp.status == 200:
+                return await resp.json()
+            raise RuntimeError(f"Failed to get models: HTTP {resp.status}")
 
-        # Try OpenAI-compatible endpoint first
-        try:
-            async with session.get(f"{self.base_url}/v1/models") as resp:
-                if resp.status == 200:
-                    return await resp.json()
-        except Exception:
-            pass
+    async def get_ollama_tags(self) -> dict[str, Any]:
+        """Get list of available models from Ollama's /api/tags endpoint.
 
-        # Fall back to Ollama-style endpoint
-        try:
-            async with session.get(f"{self.base_url}/api/tags") as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    # Convert Ollama format to OpenAI format
-                    models = data.get("models", [])
-                    return {
-                        "object": "list",
-                        "data": [
-                            {
-                                "id": m.get("name", m.get("model", "unknown")),
-                                "object": "model",
-                                "created": 0,
-                                "owned_by": "local",
-                            }
-                            for m in models
-                        ],
-                    }
-        except Exception as e:
-            logger.error("Failed to get models", error=str(e))
-            raise
-
-        return {"object": "list", "data": []}
+        Returns:
+            Dictionary with Ollama tags response
+        """
+        session = await self._get_session()
+        async with session.get(f"{self.base_url}/api/tags") as resp:
+            if resp.status == 200:
+                return await resp.json()
+            raise RuntimeError(f"Failed to get Ollama tags: HTTP {resp.status}")
