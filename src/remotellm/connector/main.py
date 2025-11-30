@@ -240,6 +240,36 @@ class Connector:
             )
             await self.tunnel_client.send_message(error_msg)
 
+    def _normalize_model_name(self, model_id: str) -> str:
+        """Normalize a model ID to a clean model name.
+
+        Handles paths like '/opt/llama.cpp/models/meta-llama-3.1-8b-instruct-q4_k_m.gguf'
+        and converts them to clean names like 'meta-llama-3.1-8b-instruct'.
+
+        Args:
+            model_id: Raw model ID from LLM server
+
+        Returns:
+            Normalized model name
+        """
+        import os
+        import re
+
+        # Extract filename from path
+        name = os.path.basename(model_id)
+
+        # Remove common file extensions
+        extensions = [".gguf", ".bin", ".safetensors", ".pt", ".pth", ".onnx"]
+        for ext in extensions:
+            if name.lower().endswith(ext):
+                name = name[: -len(ext)]
+                break
+
+        # Remove quantization suffixes (e.g., -q4_k_m, -Q4_K_M, -q8_0)
+        name = re.sub(r"[-_][qQ]\d+[_kKmM]*[_\d]*$", "", name)
+
+        return name
+
     async def _discover_models(self) -> list[str]:
         """Discover available models from the LLM server.
 
@@ -248,8 +278,14 @@ class Connector:
         """
         try:
             models_data = await self.llm_client.get_models()
-            models = [m["id"] for m in models_data.get("data", [])]
-            logger.info("Discovered models from LLM", models=models, count=len(models))
+            raw_models = [m["id"] for m in models_data.get("data", [])]
+            models = [self._normalize_model_name(m) for m in raw_models]
+            logger.info(
+                "Discovered models from LLM",
+                raw_models=raw_models,
+                normalized_models=models,
+                count=len(models),
+            )
             return models
         except Exception as e:
             logger.warning("Failed to discover models from LLM", error=str(e))
