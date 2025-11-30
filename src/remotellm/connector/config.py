@@ -1,5 +1,7 @@
 """Configuration for the connector component."""
 
+from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -38,8 +40,21 @@ class ConnectorConfig(BaseSettings):
     broker_url: str = Field(
         description="WebSocket URL of the broker to connect to",
     )
-    broker_token: str = Field(
-        description="Authentication token for broker connection",
+    broker_token: str | None = Field(
+        default=None,
+        description="Authentication token for broker connection (optional if using approval workflow)",
+    )
+
+    # Connector identity
+    connector_name: str | None = Field(
+        default=None,
+        description="Optional friendly name for this connector",
+    )
+
+    # Credentials storage for approval workflow
+    credentials_file: Path = Field(
+        default=Path("~/.remotellm/credentials.yaml"),
+        description="Path to store approved API key from broker",
     )
 
     # Health endpoint

@@ -1,23 +1,33 @@
 """WebSocket tunnel server for accepting connector connections."""
 
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import websockets
 from websockets.asyncio.server import Server, ServerConnection
 
 from remotellm.shared.logging import get_logger
 from remotellm.shared.protocol import (
+    ApprovedPayload,
     AuthPayload,
     MessageType,
     TunnelMessage,
+    create_approved_message,
     create_auth_fail_message,
     create_auth_ok_message,
+    create_pending_message,
     create_ping_message,
+    create_revoked_message,
 )
+
+if TYPE_CHECKING:
+    from remotellm.broker.connectors import Connector, ConnectorStore
 
 logger = get_logger(__name__)
 
@@ -34,6 +44,38 @@ class ConnectorRegistration:
     pending_requests: dict[str, asyncio.Future[TunnelMessage]] = field(default_factory=dict)
 
 
+@dataclass
+class PendingConnection:
+    """Connection awaiting admin approval."""
+
+    connector_id: str
+    websocket: ServerConnection
+    models: list[str]
+    name: str | None
+    connected_at: float
+    auth_correlation_id: str  # For sending APPROVED message
+
+
+class AuthStatus:
+    """Result of authentication attempt."""
+
+    APPROVED = "approved"
+    PENDING = "pending"
+    FAILED = "failed"
+
+
+@dataclass
+class AuthResult:
+    """Result of connector authentication."""
+
+    status: str
+    connector_id: str | None = None
+    models: list[str] = field(default_factory=list)
+    llm_api_key: str | None = None
+    name: str | None = None
+    correlation_id: str | None = None
+
+
 class TunnelServer:
     """WebSocket server for connector tunnel connections."""
 
@@ -43,6 +85,7 @@ class TunnelServer:
         port: int = 8443,
         connector_tokens: list[str] | None = None,
         connector_configs: dict[str, str | None] | None = None,
+        connector_store: "ConnectorStore | None" = None,
         auth_timeout: float = 10.0,
         ping_interval: float = 30.0,
         on_connector_registered: "Callable[[str, list[str], str | None], None] | None" = None,
@@ -53,8 +96,9 @@ class TunnelServer:
         Args:
             host: Host to bind to
             port: Port to bind to
-            connector_tokens: Valid authentication tokens for connectors
-            connector_configs: Mapping of token → llm_api_key for connectors
+            connector_tokens: Valid authentication tokens for connectors (legacy mode)
+            connector_configs: Mapping of token → llm_api_key for connectors (legacy mode)
+            connector_store: Persistent connector storage for approval workflow
             auth_timeout: Timeout for connector authentication
             ping_interval: Interval for ping/pong health checks
             on_connector_registered: Callback when connector registers (connector_id, models, llm_api_key)
@@ -64,12 +108,14 @@ class TunnelServer:
         self.port = port
         self.connector_tokens = connector_tokens or []
         self.connector_configs = connector_configs or {}
+        self.connector_store = connector_store
         self.auth_timeout = auth_timeout
         self.ping_interval = ping_interval
         self.on_connector_registered = on_connector_registered
         self.on_connector_disconnected = on_connector_disconnected
 
         self._connectors: dict[str, ConnectorRegistration] = {}
+        self._pending_connections: dict[str, PendingConnection] = {}  # connector_id → pending connection
         self._server: Server | None = None
         self._running = False
 
@@ -77,6 +123,15 @@ class TunnelServer:
     def connector_count(self) -> int:
         """Get number of connected connectors."""
         return len(self._connectors)
+
+    @property
+    def pending_count(self) -> int:
+        """Get number of pending (unapproved) connections."""
+        return len(self._pending_connections)
+
+    def get_pending_connections(self) -> list[PendingConnection]:
+        """Get all pending connections awaiting approval."""
+        return list(self._pending_connections.values())
 
     def get_connector(self) -> ConnectorRegistration | None:
         """Get an available connector.
@@ -188,32 +243,65 @@ class TunnelServer:
         Args:
             websocket: The WebSocket connection
         """
+        import time
+
         connector_id: str | None = None
+        is_pending = False
 
         try:
             # Authenticate the connector
             auth_result = await self._authenticate(websocket)
-            if not auth_result:
+
+            if auth_result.status == AuthStatus.FAILED:
                 return
 
-            connector_id, models, llm_api_key = auth_result
+            connector_id = auth_result.connector_id
 
-            # Register the connector
-            import time
+            if auth_result.status == AuthStatus.PENDING:
+                # Connector is pending approval - keep connection but don't register
+                is_pending = True
+                pending_conn = PendingConnection(
+                    connector_id=connector_id,
+                    websocket=websocket,
+                    models=auth_result.models,
+                    name=auth_result.name,
+                    connected_at=time.time(),
+                    auth_correlation_id=auth_result.correlation_id or "",
+                )
+                self._pending_connections[connector_id] = pending_conn
+                logger.info(
+                    "Connector pending approval",
+                    connector_id=connector_id,
+                    name=auth_result.name,
+                    models=auth_result.models,
+                )
 
+                # Keep connection alive but don't process requests
+                # Wait for admin approval via notify_approval() or disconnect
+                try:
+                    async for raw_message in websocket:
+                        # Pending connectors can only receive PING/PONG
+                        message = TunnelMessage.model_validate_json(raw_message)
+                        if message.type == MessageType.PONG:
+                            logger.debug("Received PONG from pending connector", connector_id=connector_id)
+                except websockets.ConnectionClosed:
+                    pass
+                return
+
+            # Approved connector - register and process requests
             registration = ConnectorRegistration(
                 connector_id=connector_id,
                 websocket=websocket,
                 connected_at=time.time(),
-                models=models,
-                llm_api_key=llm_api_key,
+                models=auth_result.models,
+                llm_api_key=auth_result.llm_api_key,
             )
             self._connectors[connector_id] = registration
-            logger.info("Connector registered", connector_id=connector_id, models=models)
+            logger.info("Connector registered", connector_id=connector_id, models=auth_result.models)
 
             # Notify callback
             if self.on_connector_registered:
-                self.on_connector_registered(connector_id, models, llm_api_key)
+                self.on_connector_registered(connector_id, auth_result.models, auth_result.llm_api_key)
 
             # Start ping task
             ping_task = asyncio.create_task(self._ping_loop(connector_id))
@@ -231,6 +319,12 @@ class TunnelServer:
         except Exception as e:
             logger.error("Connection error", connector_id=connector_id, error=str(e))
         finally:
+            # Clean up pending connection
+            if connector_id and connector_id in self._pending_connections:
+                del self._pending_connections[connector_id]
+                logger.info("Pending connector disconnected", connector_id=connector_id)
+
+            # Clean up registered connector
             if connector_id and connector_id in self._connectors:
                 # Cancel any pending requests
                 connector = self._connectors[connector_id]
@@ -246,16 +340,14 @@ class TunnelServer:
                 if self.on_connector_disconnected:
                     self.on_connector_disconnected(connector_id)
 
-    async def _authenticate(
-        self, websocket: ServerConnection
-    ) -> tuple[str, list[str], str | None] | None:
+    async def _authenticate(self, websocket: ServerConnection) -> AuthResult:
         """Authenticate a connector connection.
 
         Args:
             websocket: The WebSocket connection
 
         Returns:
-            Tuple of (connector_id, models, llm_api_key) if authenticated, None otherwise
+            AuthResult with status (APPROVED, PENDING, or FAILED)
         """
         try:
             # Wait for AUTH message
@@ -267,23 +359,26 @@ class TunnelServer:
                 fail_msg = create_auth_fail_message(message.id, "Expected AUTH message")
                 await websocket.send(fail_msg.model_dump_json())
                 await websocket.close()
-                return None
+                return AuthResult(status=AuthStatus.FAILED)
 
             payload = AuthPayload.model_validate(message.payload)
+            models = payload.models
+            name = payload.name
 
-            # Validate token
+            # Check if using approval workflow (connector_store) or legacy mode (connector_tokens)
+            if self.connector_store is not None:
+                return await self._authenticate_with_store(websocket, message, payload)
+
+            # Legacy mode: validate against connector_tokens list
             if self.connector_tokens and payload.token not in self.connector_tokens:
                 logger.warning("Invalid connector token")
                 fail_msg = create_auth_fail_message(message.id, "Invalid token")
                 await websocket.send(fail_msg.model_dump_json())
                 await websocket.close()
-                return None
-
-            # Extract models from AUTH payload
-            models = payload.models
+                return AuthResult(status=AuthStatus.FAILED)
 
             # Look up llm_api_key from config by token
-            llm_api_key = self.connector_configs.get(payload.token)
+            llm_api_key = self.connector_configs.get(payload.token) if payload.token else None
 
             # Generate connector ID and send AUTH_OK
             connector_id = f"conn-{uuid.uuid4().hex[:8]}"
@@ -291,21 +386,113 @@ class TunnelServer:
             await websocket.send(ok_msg.model_dump_json())
 
             logger.info(
-                "Connector authenticated",
+                "Connector authenticated (legacy mode)",
                 connector_id=connector_id,
                 models=models,
                 has_llm_api_key=llm_api_key is not None,
             )
-            return (connector_id, models, llm_api_key)
+            return AuthResult(
+                status=AuthStatus.APPROVED,
+                connector_id=connector_id,
+                models=models,
+                llm_api_key=llm_api_key,
+                name=name,
+                correlation_id=message.id,
+            )
 
         except TimeoutError:
             logger.warning("Authentication timeout")
             await websocket.close()
-            return None
+            return AuthResult(status=AuthStatus.FAILED)
         except Exception as e:
             logger.error("Authentication error", error=str(e))
             await websocket.close()
-            return None
+            return AuthResult(status=AuthStatus.FAILED)
+
+    async def _authenticate_with_store(
+        self,
+        websocket: ServerConnection,
+        message: TunnelMessage,
+        payload: AuthPayload,
+    ) -> AuthResult:
+        """Authenticate using ConnectorStore for approval workflow.
+
+        Args:
+            websocket: The WebSocket connection
+            message: The AUTH message
+            payload: The parsed AuthPayload
+
+        Returns:
+            AuthResult with status (APPROVED, PENDING, or FAILED)
+        """
+        from remotellm.broker.connectors import ConnectorStatus
+
+        models = payload.models
+        name = payload.name
+
+        # If token provided, check against connector store
+        if payload.token:
+            connector = self.connector_store.get_by_api_key(payload.token)
+
+            if connector is not None:
+                if connector.status == ConnectorStatus.APPROVED:
+                    # Valid approved connector - authenticate
+                    ok_msg = create_auth_ok_message(message.id, connector.connector_id)
+                    await websocket.send(ok_msg.model_dump_json())
+
+                    # Update models if different
+                    if models != connector.models:
+                        self.connector_store.update_models(connector.connector_id, models)
+
+                    # Update last connected time
+                    self.connector_store.update_last_connected(connector)
+
+                    logger.info(
+                        "Connector authenticated (approved)",
+                        connector_id=connector.connector_id,
+                        name=connector.name,
+                        models=models,
+                    )
+                    return AuthResult(
+                        status=AuthStatus.APPROVED,
+                        connector_id=connector.connector_id,
+                        models=models,
+                        llm_api_key=None,  # TODO: Add llm_api_key to Connector model if needed
+                        name=connector.name,
+                        correlation_id=message.id,
+                    )
+
+                elif connector.status == ConnectorStatus.REVOKED:
+                    # Revoked connector - reject
+                    logger.warning("Revoked connector attempted to connect", connector_id=connector.connector_id)
+                    fail_msg = create_auth_fail_message(message.id, "API key has been revoked")
+                    await websocket.send(fail_msg.model_dump_json())
+                    await websocket.close()
+                    return AuthResult(status=AuthStatus.FAILED)
+
+                # Pending connector trying to use token - this shouldn't happen normally
+                # Fall through to create new pending entry
+
+        # No token or invalid token - create pending connector
+        pending_connector = self.connector_store.create_pending(models=models, name=name)
+
+        # Send PENDING message
+        pending_msg = create_pending_message(message.id, pending_connector.connector_id)
+        await websocket.send(pending_msg.model_dump_json())
+
+        logger.info(
+            "Connector pending approval",
+            connector_id=pending_connector.connector_id,
+            name=name,
+            models=models,
+        )
+        return AuthResult(
+            status=AuthStatus.PENDING,
+            connector_id=pending_connector.connector_id,
+            models=models,
+            name=name,
+            correlation_id=message.id,
+        )
 
     async def _message_loop(self, connector_id: str, websocket: ServerConnection) -> None:
         """Handle incoming messages from a connector.
@@ -382,3 +569,90 @@ class TunnelServer:
             except Exception as e:
                 logger.warning("Failed to send ping", connector_id=connector_id, error=str(e))
                 break
+
+    async def notify_approval(self, connector_id: str, api_key: str) -> bool:
+        """Notify a pending connector that it has been approved.
+
+        Sends APPROVED message with the generated API key. The connector
+        will save this key and transition to authenticated state.
+
+        Args:
+            connector_id: The connector ID to approve
+            api_key: The generated API key for this connector
+
+        Returns:
+            True if notification was sent, False if connector not found
+        """
+        pending = self._pending_connections.get(connector_id)
+        if pending is None:
+            logger.warning("No pending connection for approval", connector_id=connector_id)
+            return False
+
+        try:
+            # Send APPROVED message
+            approved_msg = create_approved_message(pending.auth_correlation_id, api_key)
+            await pending.websocket.send(approved_msg.model_dump_json())
+
+            logger.info("Sent approval to connector", connector_id=connector_id)
+
+            # The connector will disconnect and reconnect with the new API key
+            # Or we could transition it directly to registered state here
+            # For simplicity, we'll close the connection and let it reconnect
+            await pending.websocket.close()
+
+            return True
+        except Exception as e:
+            logger.error("Failed to send approval", connector_id=connector_id, error=str(e))
+            return False
+
+    async def notify_revoke(self, connector_id: str, reason: str | None = None) -> bool:
+        """Notify a connector that its API key has been revoked.
+
+        Sends REVOKED message and closes the connection.
+
+        Args:
+            connector_id: The connector ID to revoke
+            reason: Optional reason for revocation
+
+        Returns:
+            True if notification was sent, False if connector not found
+        """
+        # Check registered connectors
+        connector = self._connectors.get(connector_id)
+        if connector is not None:
+            try:
+                # Send REVOKED message
+                revoked_msg = create_revoked_message(f"revoke-{uuid.uuid4().hex[:8]}", reason)
+                await connector.websocket.send(revoked_msg.model_dump_json())
+                await connector.websocket.close()
+
+                logger.info("Revoked connector", connector_id=connector_id, reason=reason)
+                return True
+            except Exception as e:
+                logger.error("Failed to send revoke", connector_id=connector_id, error=str(e))
+                return False
+
+        # Check pending connections
+        pending = self._pending_connections.get(connector_id)
+        if pending is not None:
+            try:
+                await pending.websocket.close()
+                logger.info("Closed pending connection", connector_id=connector_id)
+                return True
+            except Exception as e:
+                logger.error("Failed to close pending connection", connector_id=connector_id, error=str(e))
+                return False
+
+        logger.warning("No connection found for revoke", connector_id=connector_id)
+        return False
+
+    def is_connector_connected(self, connector_id: str) -> bool:
+        """Check if a connector is currently connected.
+
+        Args:
+            connector_id: The connector ID to check
+
+        Returns:
+            True if connector is connected (either pending or registered)
+        """
+        return connector_id in self._connectors or connector_id in self._pending_connections
