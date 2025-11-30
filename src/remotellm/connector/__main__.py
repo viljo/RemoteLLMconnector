@@ -72,9 +72,9 @@ from remotellm.connector.main import run_connector
 @click.option(
     "--health-port",
     envvar="REMOTELLM_HEALTH_PORT",
-    default=8080,
+    default=None,
     type=int,
-    help="Port for health check endpoint",
+    help="Port for health check endpoint (disabled by default)",
 )
 @click.option(
     "--log-level",
@@ -93,7 +93,7 @@ def main(
     broker_token: str | None,
     connector_name: str | None,
     credentials_file: str,
-    health_port: int,
+    health_port: int | None,
     log_level: str,
 ) -> None:
     """Run the RemoteLLM connector.

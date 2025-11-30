@@ -57,10 +57,10 @@ class ConnectorConfig(BaseSettings):
         description="Path to store approved API key from broker",
     )
 
-    # Health endpoint
-    health_port: int = Field(
-        default=8080,
-        description="Port for the health check endpoint",
+    # Health endpoint (optional - disabled by default)
+    health_port: int | None = Field(
+        default=None,
+        description="Port for the health check endpoint (disabled if not specified)",
     )
 
     # Logging

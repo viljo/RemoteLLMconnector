@@ -361,13 +361,14 @@ class Connector:
             reconnect_max_delay=self.config.reconnect_max_delay,
         )
 
-        # Start health server
-        self.health_server = HealthServer(
-            port=self.config.health_port,
-            tunnel_client=self.tunnel_client,
-            llm_client=self.llm_client,
-        )
-        await self.health_server.start()
+        # Start health server if configured
+        if self.config.health_port is not None:
+            self.health_server = HealthServer(
+                port=self.config.health_port,
+                tunnel_client=self.tunnel_client,
+                llm_client=self.llm_client,
+            )
+            await self.health_server.start()
 
         # Set up signal handlers
         loop = asyncio.get_event_loop()
