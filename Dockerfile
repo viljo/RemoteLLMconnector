@@ -6,17 +6,12 @@ WORKDIR /app
 # Install uv for fast dependency management
 RUN pip install --no-cache-dir uv
 
-# Copy dependency files first for better caching
-COPY pyproject.toml uv.lock ./
-
-# Install dependencies
-RUN uv sync --frozen --no-dev
-
-# Copy source code
+# Copy all project files needed for build
+COPY pyproject.toml uv.lock README.md ./
 COPY src/ ./src/
 
-# Install the package
-RUN uv pip install --no-deps -e .
+# Install dependencies and package
+RUN uv sync --frozen --no-dev
 
 # Create non-root user
 RUN useradd -r -s /bin/false remotellm
