@@ -42,6 +42,7 @@ class AuthHandler:
         self.user_store = user_store
         self.router = router
         self.public_url = (config.public_url or "").rstrip("/")
+        self.connector_tokens = config.connector_tokens
 
         # OAuth endpoints
         self.authorize_url = f"{self.gitlab_url}/oauth/authorize"
@@ -65,6 +66,7 @@ class AuthHandler:
         app.router.add_get("/dashboard", self.handle_dashboard)
         app.router.add_get("/services", self.handle_services)
         app.router.add_get("/chat", self.handle_chat)
+        app.router.add_get("/connect", self.handle_connect)
 
     async def handle_index(self, request: web.Request) -> web.Response:
         """Handle the index page - redirect to dashboard or login."""
@@ -258,6 +260,40 @@ class AuthHandler:
             "test_mode": False,
         }
         return aiohttp_jinja2.render_template("chat.html", request, context)
+
+    async def handle_connect(self, request: web.Request) -> web.Response:
+        """Handle the connect page (instructions for connecting LLMs)."""
+        session = await get_session(request)
+        user_data = session.get("user")
+
+        if not user_data:
+            raise web.HTTPFound("/auth/login")
+
+        # Get user from store
+        user = self.user_store.get_by_username(user_data["username"])
+        if user is None or user.blocked:
+            session.clear()
+            raise web.HTTPFound("/auth/login")
+
+        # Only admins can see connector tokens
+        if user.role != UserRole.ADMIN:
+            raise web.HTTPForbidden(text="Admin access required")
+
+        # Build WebSocket URL from public URL
+        ws_url = self.public_url.replace("https://", "wss://").replace("http://", "ws://")
+        ws_url = f"{ws_url}/ws"
+
+        # Get first connector token (or placeholder)
+        connector_token = self.connector_tokens[0] if self.connector_tokens else "request-token-from-admin"
+
+        context = {
+            "request": request,
+            "user": user,
+            "ws_url": ws_url,
+            "connector_token": connector_token,
+            "is_admin": user.role == UserRole.ADMIN,
+        }
+        return aiohttp_jinja2.render_template("connect.html", request, context)
 
 
 def require_auth(handler):

@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+
+{% block title %}Connect Your LLM - RemoteLLM{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 20px;">Connect Your LLM</h1>
+
+<div class="alert alert-info">
+    <strong>Share your local LLM!</strong> Run the RemoteLLM connector on any machine with an OpenAI-compatible LLM server to make it available through this broker.
+</div>
+
+<div class="card">
+    <h2>Connection Details</h2>
+    <div class="grid grid-2">
+        <div>
+            <p style="margin-bottom: 10px;"><strong>Broker WebSocket URL:</strong></p>
+            <div class="code-block">
+                <button class="copy-btn" onclick="copyToClipboard('{{ ws_url }}', this)">Copy</button>
+                {{ ws_url }}
+            </div>
+        </div>
+        <div>
+            <p style="margin-bottom: 10px;"><strong>Your Connector Token:</strong></p>
+            <div class="code-block">
+                <button class="copy-btn" onclick="copyToClipboard('{{ connector_token }}', this)">Copy</button>
+                {{ connector_token }}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>1. Install the Connector</h2>
+    <p style="margin-bottom: 15px;">Clone and install the RemoteLLM connector on your machine:</p>
+    <div class="code-block">
+        <button class="copy-btn" onclick="copyToClipboard(document.getElementById('install-cmd').textContent, this)">Copy</button>
+        <pre id="install-cmd"># Clone the repository
+git clone https://github.com/viljo/RemoteLLMconnector.git
+cd RemoteLLMconnector
+
+# Install with uv (recommended)
+uv sync
+
+# Or with pip
+pip install -e .</pre>
+    </div>
+</div>
+
+<div class="card">
+    <h2>2. Run the Connector</h2>
+    <p style="margin-bottom: 15px;">Start the connector pointing to your local LLM server:</p>
+    <div class="code-block">
+        <button class="copy-btn" onclick="copyToClipboard(document.getElementById('run-cmd').textContent, this)">Copy</button>
+        <pre id="run-cmd">remotellm-connector \
+  --llm-url http://localhost:8000 \
+  --broker-url {{ ws_url }} \
+  --broker-token {{ connector_token }} \
+  --model your-model-name \
+  --log-level INFO</pre>
+    </div>
+
+    <div class="alert alert-info" style="margin-top: 15px;">
+        <strong>Tip:</strong> Replace <code>http://localhost:8000</code> with your LLM server URL and <code>your-model-name</code> with the model identifier you want to expose.
+    </div>
+</div>
+
+<div class="card">
+    <h2>3. Command Line Options</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                <th>Description</th>
+                <th>Example</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>--llm-url</code></td>
+                <td>URL of your local LLM API (OpenAI-compatible)</td>
+                <td><code>http://localhost:8000</code></td>
+            </tr>
+            <tr>
+                <td><code>--broker-url</code></td>
+                <td>WebSocket URL of the broker</td>
+                <td><code>{{ ws_url }}</code></td>
+            </tr>
+            <tr>
+                <td><code>--broker-token</code></td>
+                <td>Authentication token</td>
+                <td><code>{{ connector_token[:20] }}...</code></td>
+            </tr>
+            <tr>
+                <td><code>--model</code></td>
+                <td>Model name to expose (can repeat for multiple)</td>
+                <td><code>llama-3.1-70b</code></td>
+            </tr>
+            <tr>
+                <td><code>--log-level</code></td>
+                <td>Logging verbosity</td>
+                <td><code>DEBUG</code>, <code>INFO</code>, <code>WARNING</code></td>
+            </tr>
+            <tr>
+                <td><code>--health-port</code></td>
+                <td>Health check port (optional)</td>
+                <td><code>8080</code></td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>4. Multiple Models</h2>
+    <p style="margin-bottom: 15px;">Expose multiple models from a single connector:</p>
+    <div class="code-block">
+        <button class="copy-btn" onclick="copyToClipboard(document.getElementById('multi-cmd').textContent, this)">Copy</button>
+        <pre id="multi-cmd">remotellm-connector \
+  --llm-url http://localhost:8000 \
+  --broker-url {{ ws_url }} \
+  --broker-token {{ connector_token }} \
+  --model llama-3.1-8b \
+  --model llama-3.1-70b \
+  --model codellama-34b</pre>
+    </div>
+</div>
+
+<div class="card">
+    <h2>5. Systemd Service (Persistent)</h2>
+    <p style="margin-bottom: 15px;">For persistent deployment, create a systemd service at <code>/etc/systemd/system/remotellm-connector.service</code>:</p>
+    <div class="code-block">
+        <button class="copy-btn" onclick="copyToClipboard(document.getElementById('systemd-cmd').textContent, this)">Copy</button>
+        <pre id="systemd-cmd">[Unit]
+Description=RemoteLLM Connector
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/remotellm
+ExecStart=/usr/local/bin/remotellm-connector \
+    --llm-url http://localhost:8000 \
+    --broker-url {{ ws_url }} \
+    --broker-token {{ connector_token }} \
+    --model your-model-name \
+    --log-level INFO
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target</pre>
+    </div>
+
+    <p style="margin-top: 15px;">Enable and start the service:</p>
+    <div class="code-block">
+        <button class="copy-btn" onclick="copyToClipboard('sudo systemctl daemon-reload && sudo systemctl enable remotellm-connector && sudo systemctl start remotellm-connector', this)">Copy</button>
+        <pre>sudo systemctl daemon-reload
+sudo systemctl enable remotellm-connector
+sudo systemctl start remotellm-connector</pre>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Supported LLM Servers</h2>
+    <p style="margin-bottom: 15px;">The connector works with any OpenAI-compatible API:</p>
+    <div class="grid grid-2">
+        <div>
+            <h3 style="margin-bottom: 10px;">llama.cpp</h3>
+            <div class="code-block" style="font-size: 0.85rem;">
+                <pre>./llama-server \
+  --model model.gguf \
+  --host 0.0.0.0 \
+  --port 8000</pre>
+            </div>
+        </div>
+        <div>
+            <h3 style="margin-bottom: 10px;">Ollama</h3>
+            <div class="code-block" style="font-size: 0.85rem;">
+                <pre># Default endpoint
+http://localhost:11434/v1</pre>
+            </div>
+        </div>
+        <div>
+            <h3 style="margin-bottom: 10px;">vLLM</h3>
+            <div class="code-block" style="font-size: 0.85rem;">
+                <pre>vllm serve model-name \
+  --host 0.0.0.0 \
+  --port 8000</pre>
+            </div>
+        </div>
+        <div>
+            <h3 style="margin-bottom: 10px;">LM Studio</h3>
+            <div class="code-block" style="font-size: 0.85rem;">
+                <pre># Enable server in LM Studio
+http://localhost:1234/v1</pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Troubleshooting</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Issue</th>
+                <th>Solution</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Connection refused</td>
+                <td>Check that your LLM server is running and accessible at the specified URL</td>
+            </tr>
+            <tr>
+                <td>Authentication failed</td>
+                <td>Verify your connector token is correct</td>
+            </tr>
+            <tr>
+                <td>WebSocket disconnects</td>
+                <td>Check network stability; the connector will auto-reconnect</td>
+            </tr>
+            <tr>
+                <td>Model not appearing</td>
+                <td>Ensure the model name matches exactly and the LLM server has the model loaded</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}
