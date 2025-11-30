@@ -23,6 +23,9 @@ class MessageType(str, Enum):
     REQUEST = "REQUEST"
     PONG = "PONG"
     CANCEL = "CANCEL"
+    PENDING = "PENDING"  # Connector pending admin approval
+    APPROVED = "APPROVED"  # Connector approved, here's your API key
+    REVOKED = "REVOKED"  # Connector API key revoked
 
 
 class TunnelMessage(BaseModel):
@@ -37,7 +40,8 @@ class TunnelMessage(BaseModel):
 class AuthPayload(BaseModel):
     """Payload for AUTH message."""
 
-    token: str
+    token: str | None = Field(default=None, description="API key for approved connectors")
+    name: str | None = Field(default=None, description="Optional friendly name for the connector")
     connector_version: str = "1.0.0"
     models: list[str] = Field(default_factory=list, description="Models served by this connector")
 
@@ -52,6 +56,25 @@ class AuthFailPayload(BaseModel):
     """Payload for AUTH_FAIL message."""
 
     error: str
+
+
+class PendingPayload(BaseModel):
+    """Payload for PENDING message - connector awaiting admin approval."""
+
+    connector_id: str = Field(description="Assigned connector ID")
+    message: str = "Waiting for admin approval"
+
+
+class ApprovedPayload(BaseModel):
+    """Payload for APPROVED message - connector approved with API key."""
+
+    api_key: str = Field(description="Generated API key for this connector")
+
+
+class RevokedPayload(BaseModel):
+    """Payload for REVOKED message - connector API key revoked."""
+
+    reason: str = "API key revoked by admin"
 
 
 # Request/Response messages
@@ -96,10 +119,13 @@ class ErrorPayload(BaseModel):
 
 # Helper functions
 def create_auth_message(
-    correlation_id: str, token: str, models: list[str] | None = None
+    correlation_id: str,
+    token: str | None = None,
+    models: list[str] | None = None,
+    name: str | None = None,
 ) -> TunnelMessage:
     """Create an AUTH message."""
-    payload = AuthPayload(token=token, models=models or [])
+    payload = AuthPayload(token=token, name=name, models=models or [])
     return TunnelMessage(type=MessageType.AUTH, id=correlation_id, payload=payload.model_dump())
 
 
@@ -177,3 +203,21 @@ def create_pong_message(correlation_id: str) -> TunnelMessage:
 def create_cancel_message(correlation_id: str) -> TunnelMessage:
     """Create a CANCEL message."""
     return TunnelMessage(type=MessageType.CANCEL, id=correlation_id, payload={})
+
+
+def create_pending_message(correlation_id: str, connector_id: str, message: str | None = None) -> TunnelMessage:
+    """Create a PENDING message."""
+    payload = PendingPayload(connector_id=connector_id, message=message or "Waiting for admin approval")
+    return TunnelMessage(type=MessageType.PENDING, id=correlation_id, payload=payload.model_dump())
+
+
+def create_approved_message(correlation_id: str, api_key: str) -> TunnelMessage:
+    """Create an APPROVED message."""
+    payload = ApprovedPayload(api_key=api_key)
+    return TunnelMessage(type=MessageType.APPROVED, id=correlation_id, payload=payload.model_dump())
+
+
+def create_revoked_message(correlation_id: str, reason: str | None = None) -> TunnelMessage:
+    """Create a REVOKED message."""
+    payload = RevokedPayload(reason=reason or "API key revoked by admin")
+    return TunnelMessage(type=MessageType.REVOKED, id=correlation_id, payload=payload.model_dump())

@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block title %}Connector Management - RemoteLLM{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 20px;">Connector Management</h1>
+
+{% if message %}
+<div class="alert alert-{% if message_type == 'error' %}danger{% else %}success{% endif %}">
+    {{ message }}
+</div>
+{% endif %}
+
+<div class="grid grid-2" style="margin-bottom: 20px;">
+    <div class="card stat-card">
+        <div class="stat-value">{{ pending_connectors|length }}</div>
+        <div class="stat-label">Pending Approval</div>
+    </div>
+    <div class="card stat-card">
+        <div class="stat-value">{{ approved_connectors|length }}</div>
+        <div class="stat-label">Active Connectors</div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Pending Connectors ({{ pending_connectors|length }})</h2>
+    {% if pending_connectors %}
+    <table>
+        <thead>
+            <tr>
+                <th>Connector ID</th>
+                <th>Name</th>
+                <th>Models</th>
+                <th>Created</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in pending_connectors %}
+            <tr>
+                <td><code>{{ item.connector.connector_id }}</code></td>
+                <td>
+                    {% if item.connector.name %}
+                    {{ item.connector.name }}
+                    {% else %}
+                    <span style="color: #7f8c8d;">(unnamed)</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% for model in item.connector.models %}
+                    <span class="model-tag">{{ model }}</span>
+                    {% else %}
+                    <span style="color: #7f8c8d;">No models</span>
+                    {% endfor %}
+                </td>
+                <td>{{ item.connector.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>
+                    {% if item.is_connected %}
+                    <span class="badge badge-warning">Connected (Waiting)</span>
+                    {% else %}
+                    <span class="badge badge-danger">Disconnected</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <form action="/admin/connectors/{{ item.connector.connector_id }}/approve" method="POST" style="display: inline;">
+                        <button type="submit" class="btn btn-success" style="padding: 5px 10px; font-size: 0.8rem;">Approve</button>
+                    </form>
+                    <form action="/admin/connectors/{{ item.connector.connector_id }}/delete" method="POST" style="display: inline;">
+                        <button type="submit" class="btn btn-danger" style="padding: 5px 10px; font-size: 0.8rem;"
+                                onclick="return confirm('Delete this pending connector?')">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #7f8c8d; text-align: center; padding: 20px;">
+        No pending connectors.<br>
+        New connectors will appear here when they connect without an API key.
+    </p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Connector API Keys ({{ approved_connectors|length }})</h2>
+    {% if approved_connectors %}
+    <table>
+        <thead>
+            <tr>
+                <th>Connector ID</th>
+                <th>Name</th>
+                <th>API Key</th>
+                <th>Models</th>
+                <th>Last Used</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in approved_connectors %}
+            <tr>
+                <td><code>{{ item.connector.connector_id }}</code></td>
+                <td>
+                    {% if item.connector.name %}
+                    {{ item.connector.name }}
+                    {% else %}
+                    <span style="color: #7f8c8d;">(unnamed)</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <code style="font-size: 0.8rem;">{{ item.connector.api_key[:15] }}...</code>
+                </td>
+                <td>
+                    {% for model in item.connector.models %}
+                    <span class="{% if item.is_connected %}model-tag-loaded{% else %}model-tag{% endif %}">{{ model }}</span>
+                    {% else %}
+                    <span style="color: #7f8c8d;">No models</span>
+                    {% endfor %}
+                </td>
+                <td>
+                    {% if item.connector.last_used %}
+                    {{ item.connector.last_used.strftime('%Y-%m-%d %H:%M') }}
+                    {% else %}
+                    <span style="color: #7f8c8d;">Never</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if item.is_connected %}
+                    <span class="badge badge-success">Connected</span>
+                    {% else %}
+                    <span class="badge badge-danger">Disconnected</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <form action="/admin/connectors/{{ item.connector.connector_id }}/revoke" method="POST" style="display: inline;">
+                        <button type="submit" class="btn btn-danger" style="padding: 5px 10px; font-size: 0.8rem;"
+                                onclick="return confirm('Revoke this connector API key? The connector will be disconnected.')">Revoke</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #7f8c8d; text-align: center; padding: 20px;">
+        No approved connectors.<br>
+        Approve pending connectors to generate API keys.
+    </p>
+    {% endif %}
+</div>
+
+<div class="alert alert-info">
+    <strong>Note:</strong> Connectors can connect without an API key and will appear in the "Pending Connectors" section.
+    Once approved, the connector receives an API key and can serve requests. Revoking a connector will immediately
+    disconnect it and invalidate its API key.
+</div>
+{% endblock %}

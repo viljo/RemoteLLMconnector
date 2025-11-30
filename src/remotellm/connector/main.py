@@ -355,6 +355,8 @@ class Connector:
             broker_token=self.config.broker_token,
             request_handler=self._handle_request,
             models=models,
+            connector_name=self.config.connector_name,
+            credentials_file=self.config.credentials_file,
             reconnect_base_delay=self.config.reconnect_base_delay,
             reconnect_max_delay=self.config.reconnect_max_delay,
         )

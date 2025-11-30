@@ -1,6 +1,7 @@
 """CLI entry point for the connector component."""
 
 import asyncio
+from pathlib import Path
 
 import click
 
@@ -52,8 +53,21 @@ from remotellm.connector.main import run_connector
 @click.option(
     "--broker-token",
     envvar="REMOTELLM_BROKER_TOKEN",
-    required=True,
-    help="Authentication token for the broker",
+    default=None,
+    help="Authentication token for the broker (optional, can be loaded from credentials file or obtained via approval workflow)",
+)
+@click.option(
+    "--connector-name",
+    envvar="REMOTELLM_CONNECTOR_NAME",
+    default=None,
+    help="Friendly name for this connector (displayed in admin dashboard)",
+)
+@click.option(
+    "--credentials-file",
+    envvar="REMOTELLM_CREDENTIALS_FILE",
+    default="~/.remotellm/credentials.yaml",
+    type=click.Path(),
+    help="Path to store approved API key from broker",
 )
 @click.option(
     "--health-port",
@@ -76,7 +90,9 @@ def main(
     llm_ssl_verify: bool,
     models: tuple[str, ...],
     broker_url: str,
-    broker_token: str,
+    broker_token: str | None,
+    connector_name: str | None,
+    credentials_file: str,
     health_port: int,
     log_level: str,
 ) -> None:
@@ -84,6 +100,11 @@ def main(
 
     The connector bridges your local LLM server to the external broker,
     allowing external users to access your LLM through the API.
+
+    If no --broker-token is provided, the connector will:
+    1. Try to load a saved token from the credentials file
+    2. If no saved token, connect without authentication and wait for admin approval
+    3. Once approved, automatically save the received API key for future use
     """
     config = ConnectorConfig(
         llm_url=llm_url,
@@ -93,6 +114,8 @@ def main(
         models=list(models),
         broker_url=broker_url,
         broker_token=broker_token,
+        connector_name=connector_name,
+        credentials_file=Path(credentials_file),
         health_port=health_port,
         log_level=log_level.upper(),
     )

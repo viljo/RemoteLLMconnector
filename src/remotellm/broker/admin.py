@@ -12,11 +12,13 @@ import structlog
 from aiohttp import web
 from aiohttp_session import get_session
 
+from .connectors import ConnectorStore
 from .preprompts import PrepromptStore
 from .users import UserRole, UserStore
 
 if TYPE_CHECKING:
     from .router import ModelRouter
+    from .tunnel_server import TunnelServer
 
 log = structlog.get_logger()
 
@@ -93,9 +95,11 @@ class AdminHandler:
     def __init__(
         self,
         user_store: UserStore,
-        router: ModelRouter,
+        router: "ModelRouter",
         request_logger: RequestLogger,
         preprompt_store: PrepromptStore | None = None,
+        connector_store: ConnectorStore | None = None,
+        tunnel_server: "TunnelServer | None" = None,
     ) -> None:
         """Initialize the admin handler.
 
@@ -104,11 +108,15 @@ class AdminHandler:
             router: Model router for getting connector info
             request_logger: Request logger for viewing logs
             preprompt_store: Preprompt storage instance
+            connector_store: Connector storage for approval workflow
+            tunnel_server: Tunnel server for sending approval/revoke notifications
         """
         self.user_store = user_store
         self.router = router
         self.request_logger = request_logger
         self.preprompt_store = preprompt_store
+        self.connector_store = connector_store
+        self.tunnel_server = tunnel_server
 
     def setup_routes(self, app: web.Application) -> None:
         """Register admin routes with the application."""
@@ -120,6 +128,11 @@ class AdminHandler:
         app.router.add_get("/admin/logs", self.handle_logs)
         app.router.add_get("/admin/settings", self.handle_settings)
         app.router.add_post("/admin/settings", self.handle_save_settings)
+        # Connector management routes
+        app.router.add_get("/admin/connectors", self.handle_connectors)
+        app.router.add_post("/admin/connectors/{connector_id}/approve", self.handle_approve_connector)
+        app.router.add_post("/admin/connectors/{connector_id}/revoke", self.handle_revoke_connector)
+        app.router.add_post("/admin/connectors/{connector_id}/delete", self.handle_delete_connector)
 
     async def _require_admin(self, request: web.Request) -> tuple[dict, UserStore]:
         """Require admin access and return session user data."""
@@ -356,3 +369,107 @@ class AdminHandler:
             raise web.HTTPFound("/admin/settings?message=Preprompt+not+found&type=error")
 
         raise web.HTTPFound("/admin/settings")
+
+    async def handle_connectors(self, request: web.Request) -> web.Response:
+        """Handle the connectors management page."""
+        user_data, user = await self._require_admin(request)
+
+        if not self.connector_store:
+            raise web.HTTPFound("/admin?message=Connector+store+not+configured&type=error")
+
+        # Get all connectors from store
+        pending_connectors = self.connector_store.get_pending()
+        approved_connectors = self.connector_store.get_approved()
+
+        # Enhance with connection status from tunnel server
+        pending_with_status = []
+        for conn in pending_connectors:
+            is_connected = self.tunnel_server.is_connector_connected(conn.connector_id) if self.tunnel_server else False
+            pending_with_status.append({
+                "connector": conn,
+                "is_connected": is_connected,
+            })
+
+        approved_with_status = []
+        for conn in approved_connectors:
+            is_connected = self.tunnel_server.is_connector_connected(conn.connector_id) if self.tunnel_server else False
+            approved_with_status.append({
+                "connector": conn,
+                "is_connected": is_connected,
+            })
+
+        # Get message from query params (for feedback after actions)
+        message = request.query.get("message")
+        message_type = request.query.get("type", "success")
+
+        context = {
+            "request": request,
+            "user": user,
+            "is_admin": True,
+            "pending_connectors": pending_with_status,
+            "approved_connectors": approved_with_status,
+            "message": message,
+            "message_type": message_type,
+        }
+        return aiohttp_jinja2.render_template("admin/connectors.html", request, context)
+
+    async def handle_approve_connector(self, request: web.Request) -> web.Response:
+        """Handle approving a pending connector."""
+        await self._require_admin(request)
+
+        if not self.connector_store:
+            raise web.HTTPFound("/admin/connectors?message=Connector+store+not+configured&type=error")
+
+        connector_id = request.match_info["connector_id"]
+
+        # Generate API key and approve
+        api_key = self.connector_store.approve(connector_id)
+        if not api_key:
+            raise web.HTTPFound(f"/admin/connectors?message=Connector+{connector_id}+not+found+or+not+pending&type=error")
+
+        # Notify connector if connected
+        if self.tunnel_server:
+            await self.tunnel_server.notify_approval(connector_id, api_key)
+
+        log.info("Connector approved", connector_id=connector_id)
+        raise web.HTTPFound(f"/admin/connectors?message=Connector+{connector_id}+approved&type=success")
+
+    async def handle_revoke_connector(self, request: web.Request) -> web.Response:
+        """Handle revoking a connector's API key."""
+        await self._require_admin(request)
+
+        if not self.connector_store:
+            raise web.HTTPFound("/admin/connectors?message=Connector+store+not+configured&type=error")
+
+        connector_id = request.match_info["connector_id"]
+
+        # Revoke the connector
+        if not self.connector_store.revoke(connector_id):
+            raise web.HTTPFound(f"/admin/connectors?message=Connector+{connector_id}+not+found&type=error")
+
+        # Notify connector if connected
+        if self.tunnel_server:
+            await self.tunnel_server.notify_revoke(connector_id, "API key revoked by admin")
+
+        log.info("Connector revoked", connector_id=connector_id)
+        raise web.HTTPFound(f"/admin/connectors?message=Connector+{connector_id}+revoked&type=success")
+
+    async def handle_delete_connector(self, request: web.Request) -> web.Response:
+        """Handle deleting a connector entirely."""
+        await self._require_admin(request)
+
+        if not self.connector_store:
+            raise web.HTTPFound("/admin/connectors?message=Connector+store+not+configured&type=error")
+
+        connector_id = request.match_info["connector_id"]
+
+        # Delete the connector
+        if not self.connector_store.delete(connector_id):
+            raise web.HTTPFound(f"/admin/connectors?message=Connector+{connector_id}+not+found&type=error")
+
+        # Close connection if still connected
+        if self.tunnel_server:
+            await self.tunnel_server.notify_revoke(connector_id, "Connector deleted by admin")
+
+        log.info("Connector deleted", connector_id=connector_id)
+        raise web.HTTPFound(f"/admin/connectors?message=Connector+{connector_id}+deleted&type=success")

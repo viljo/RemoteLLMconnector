@@ -17,6 +17,7 @@ from remotellm.broker.admin import AdminHandler, RequestLogger
 from remotellm.broker.api import BrokerAPI
 from remotellm.broker.auth import AuthHandler
 from remotellm.broker.config import BrokerConfig
+from remotellm.broker.connectors import ConnectorStore
 from remotellm.broker.health import HealthServer
 from remotellm.broker.preprompts import PrepromptStore
 from remotellm.broker.router import ModelRouter
@@ -78,6 +79,7 @@ class Broker:
         # Web portal components (initialized if OAuth or test mode enabled)
         self.user_store: UserStore | None = None
         self.preprompt_store: PrepromptStore | None = None
+        self.connector_store: ConnectorStore | None = None
         self.auth_handler: AuthHandler | None = None
         self.test_auth_handler: TestAuthHandler | None = None
         self.admin_handler: AdminHandler | None = None
@@ -114,6 +116,12 @@ class Broker:
         preprompts_file = users_file.parent / "preprompts.yaml"
         self.preprompt_store = PrepromptStore(preprompts_file)
 
+        # Create connector store (same directory as users file)
+        connectors_file = users_file.parent / "connectors.yaml"
+        self.connector_store = ConnectorStore(connectors_file)
+        # Pass connector_store to tunnel_server for approval workflow
+        self.tunnel_server.connector_store = self.connector_store
+
         # Choose auth handler based on mode
         if self.config.test_mode:
             logger.info("Setting up web portal in TEST MODE")
@@ -140,6 +148,8 @@ class Broker:
             router=self.router,
             request_logger=self.request_logger,
             preprompt_store=self.preprompt_store,
+            connector_store=self.connector_store,
+            tunnel_server=self.tunnel_server,
         )
         self.admin_handler.setup_routes(app)
 
