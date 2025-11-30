@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Connected Services - RemoteLLM{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 20px;">Connected Services</h1>
+
+<div class="grid grid-2" style="margin-bottom: 20px;">
+    <div class="card stat-card">
+        <div class="stat-value">{{ connectors|length }}</div>
+        <div class="stat-label">Connected Connectors</div>
+    </div>
+    <div class="card stat-card">
+        <div class="stat-value">{{ connectors|sum(attribute='model_count') }}</div>
+        <div class="stat-label">Available Models</div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>LLM Connectors</h2>
+    {% if connectors %}
+    <table>
+        <thead>
+            <tr>
+                <th>Connector ID</th>
+                <th>Status</th>
+                <th>Models</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for connector in connectors %}
+            <tr>
+                <td><code>{{ connector.id }}</code></td>
+                <td>
+                    {% if connector.connected %}
+                    <span class="badge badge-success">Connected</span>
+                    {% else %}
+                    <span class="badge badge-danger">Disconnected</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% for model in connector.models %}
+                    <span class="model-tag">{{ model }}</span>
+                    {% endfor %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #7f8c8d; text-align: center; padding: 40px;">
+        No connectors are currently connected.<br>
+        Models will appear here when connectors register.
+    </p>
+    {% endif %}
+</div>
+
+<div class="alert alert-info">
+    <strong>Note:</strong> This page shows all LLM services available through the broker.
+    Each connector provides access to one or more models. Requests are automatically routed
+    to the connector serving the requested model.
+</div>
+{% endblock %}

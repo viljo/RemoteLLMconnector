@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}Logs - RemoteLLM{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 20px;">Request Logs</h1>
+
+<div class="card">
+    <h2>Filters</h2>
+    <form method="GET" action="/admin/logs">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; align-items: end;">
+            <div>
+                <label style="display: block; margin-bottom: 5px; font-weight: 500;">User</label>
+                <select name="user" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                    <option value="">All Users</option>
+                    {% for u in all_users %}
+                    <option value="{{ u.gitlab_username }}" {% if filters.user == u.gitlab_username %}selected{% endif %}>
+                        {{ u.gitlab_username }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label style="display: block; margin-bottom: 5px; font-weight: 500;">Model</label>
+                <select name="model" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                    <option value="">All Models</option>
+                    {% for model in all_models %}
+                    <option value="{{ model }}" {% if filters.model == model %}selected{% endif %}>
+                        {{ model }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label style="display: block; margin-bottom: 5px; font-weight: 500;">Status</label>
+                <select name="status" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                    <option value="">All</option>
+                    <option value="success" {% if filters.status == 'success' %}selected{% endif %}>Success</option>
+                    <option value="error" {% if filters.status == 'error' %}selected{% endif %}>Error</option>
+                </select>
+            </div>
+            <div>
+                <label style="display: block; margin-bottom: 5px; font-weight: 500;">Correlation ID</label>
+                <input type="text" name="correlation_id" value="{{ filters.correlation_id or '' }}"
+                       placeholder="Search by ID..."
+                       style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+            <button type="submit" class="btn btn-primary">Filter</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Recent Requests ({{ logs|length }})</h2>
+    {% if logs %}
+    <table>
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Correlation ID</th>
+                <th>User</th>
+                <th>Model</th>
+                <th>Status</th>
+                <th>Duration</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in logs %}
+            <tr>
+                <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                <td><code style="font-size: 0.8rem;">{{ log.correlation_id[:12] }}...</code></td>
+                <td>{{ log.user or '-' }}</td>
+                <td><span class="model-tag">{{ log.model }}</span></td>
+                <td>
+                    {% if log.status == 'success' %}
+                    <span class="badge badge-success">Success</span>
+                    {% else %}
+                    <span class="badge badge-danger">{{ log.status }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ log.duration_ms }}ms</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #7f8c8d; text-align: center; padding: 40px;">
+        No request logs available yet.<br>
+        Logs will appear here when API requests are made.
+    </p>
+    {% endif %}
+</div>
+
+<div class="alert alert-info">
+    <strong>Note:</strong> Logs are stored in memory and limited to the most recent {{ max_logs }} requests.
+    They are cleared when the broker restarts.
+</div>
+{% endblock %}

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.remotellm.connector</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/remotellm-connector</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>REMOTELLM_LLM_URL</key>
+        <string>http://localhost:11434</string>
+        <key>REMOTELLM_BROKER_URL</key>
+        <string>wss://broker.example.com:8444</string>
+        <key>REMOTELLM_BROKER_TOKEN</key>
+        <string>your-token-here</string>
+        <!-- Comma-separated list of models served by this connector -->
+        <key>REMOTELLM_MODELS</key>
+        <string>gpt-4,gpt-3.5-turbo</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/usr/local/var/log/remotellm/connector.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/usr/local/var/log/remotellm/connector.error.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>/usr/local/opt/remotellm</string>
+</dict>
+</plist>

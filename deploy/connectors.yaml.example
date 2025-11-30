@@ -1,0 +1,31 @@
+# Example connector configuration for RemoteLLM Broker
+#
+# This file maps connector authentication tokens to their LLM API keys.
+# Each connector authenticates with a token, and the broker injects the
+# corresponding LLM API key into requests before forwarding to the connector.
+#
+# Usage:
+#   1. Copy this file to /etc/remotellm/connectors.yaml (Linux) or
+#      /usr/local/etc/remotellm/connectors.yaml (macOS)
+#   2. Replace tokens and API keys with your actual values
+#   3. Configure the broker to use this file via --connector-config or
+#      REMOTELLM_BROKER_CONNECTOR_CONFIG environment variable
+#
+# Security notes:
+#   - This file contains sensitive API keys - protect it accordingly
+#   - Set restrictive permissions: chmod 600 connectors.yaml
+#   - The token is used by the connector to authenticate to the broker
+#   - The llm_api_key is injected into requests to the LLM provider
+
+connectors:
+  # Connector for OpenAI-compatible LLM
+  - token: "connector-token-1"
+    llm_api_key: "sk-your-openai-api-key-here"
+
+  # Connector for another LLM provider
+  - token: "connector-token-2"
+    llm_api_key: "your-other-api-key-here"
+
+  # Connector without API key (for LLMs that don't require auth)
+  - token: "connector-token-3"
+    # llm_api_key omitted - requests forwarded without auth header

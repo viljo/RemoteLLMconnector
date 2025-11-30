@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Dashboard - RemoteLLM{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 20px;">Admin Dashboard</h1>
+
+<div class="grid grid-2" style="margin-bottom: 20px;">
+    <div class="card stat-card">
+        <div class="stat-value">{{ stats.user_count }}</div>
+        <div class="stat-label">Registered Users</div>
+    </div>
+    <div class="card stat-card">
+        <div class="stat-value">{{ stats.connector_count }}</div>
+        <div class="stat-label">Connected Connectors</div>
+    </div>
+    <div class="card stat-card">
+        <div class="stat-value">{{ stats.model_count }}</div>
+        <div class="stat-label">Available Models</div>
+    </div>
+    <div class="card stat-card">
+        <div class="stat-value">{{ stats.admin_count }}</div>
+        <div class="stat-label">Administrators</div>
+    </div>
+</div>
+
+<div class="grid grid-2">
+    <div class="card">
+        <h2>Quick Actions</h2>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+            <a href="/admin/users" class="btn btn-primary">Manage Users</a>
+            <a href="/admin/logs" class="btn btn-primary">View Logs</a>
+            <a href="/admin/settings" class="btn btn-primary">Settings</a>
+            <a href="/services" class="btn btn-primary">View Services</a>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Recent Activity</h2>
+        {% if recent_users %}
+        <table>
+            <thead>
+                <tr>
+                    <th>User</th>
+                    <th>Last Active</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in recent_users[:5] %}
+                <tr>
+                    <td>{{ user.gitlab_username }}</td>
+                    <td>
+                        {% if user.last_used %}
+                        {{ user.last_used.strftime('%Y-%m-%d %H:%M') }}
+                        {% else %}
+                        Never
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p style="color: #7f8c8d;">No recent user activity.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <h2>Connected Connectors</h2>
+    {% if connectors %}
+    <table>
+        <thead>
+            <tr>
+                <th>Connector ID</th>
+                <th>Status</th>
+                <th>Models</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for connector in connectors %}
+            <tr>
+                <td><code>{{ connector.id }}</code></td>
+                <td><span class="badge badge-success">Connected</span></td>
+                <td>
+                    {% for model in connector.models %}
+                    <span class="model-tag">{{ model }}</span>
+                    {% endfor %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #7f8c8d; text-align: center; padding: 20px;">No connectors currently connected.</p>
+    {% endif %}
+</div>
+{% endblock %}
