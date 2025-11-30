@@ -1,0 +1,34 @@
+[Unit]
+Description=RemoteLLM Broker - API server for external users
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=remotellm
+Group=remotellm
+WorkingDirectory=/opt/remotellm
+ExecStart=/opt/remotellm/venv/bin/python -m remotellm.broker
+Restart=always
+RestartSec=10
+
+# Environment file for configuration
+EnvironmentFile=/etc/remotellm/broker.env
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadOnlyPaths=/
+
+# Allow writing to logs if needed
+ReadWritePaths=/var/log/remotellm
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=remotellm-broker
+
+[Install]
+WantedBy=multi-user.target

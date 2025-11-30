@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}User Management - RemoteLLM{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 20px;">User Management</h1>
+
+{% if message %}
+<div class="alert alert-{% if message_type == 'error' %}danger{% else %}success{% endif %}">
+    {{ message }}
+</div>
+{% endif %}
+
+<div class="card">
+    <h2>Registered Users ({{ users|length }})</h2>
+    {% if users %}
+    <table>
+        <thead>
+            <tr>
+                <th>Username</th>
+                <th>Role</th>
+                <th>API Key</th>
+                <th>Created</th>
+                <th>Last Used</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in users %}
+            <tr>
+                <td>
+                    <strong>{{ u.gitlab_username }}</strong>
+                    <br><small style="color: #7f8c8d;">ID: {{ u.gitlab_id }}</small>
+                </td>
+                <td>
+                    <span class="badge badge-{% if u.role.value == 'admin' %}info{% else %}success{% endif %}">
+                        {{ u.role.value }}
+                    </span>
+                </td>
+                <td>
+                    <code style="font-size: 0.8rem;">{{ u.api_key[:15] }}...</code>
+                </td>
+                <td>{{ u.created_at.strftime('%Y-%m-%d') }}</td>
+                <td>
+                    {% if u.last_used %}
+                    {{ u.last_used.strftime('%Y-%m-%d %H:%M') }}
+                    {% else %}
+                    <span style="color: #7f8c8d;">Never</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if u.blocked %}
+                    <span class="badge badge-danger">Blocked</span>
+                    {% else %}
+                    <span class="badge badge-success">Active</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if u.gitlab_username != user.gitlab_username %}
+                    <form action="/admin/users/{{ u.gitlab_username }}/toggle-block" method="POST" style="display: inline;">
+                        {% if u.blocked %}
+                        <button type="submit" class="btn btn-success" style="padding: 5px 10px; font-size: 0.8rem;">Unblock</button>
+                        {% else %}
+                        <button type="submit" class="btn btn-danger" style="padding: 5px 10px; font-size: 0.8rem;">Block</button>
+                        {% endif %}
+                    </form>
+                    <form action="/admin/users/{{ u.gitlab_username }}/toggle-role" method="POST" style="display: inline;">
+                        {% if u.role.value == 'admin' %}
+                        <button type="submit" class="btn btn-primary" style="padding: 5px 10px; font-size: 0.8rem;">Demote</button>
+                        {% else %}
+                        <button type="submit" class="btn btn-primary" style="padding: 5px 10px; font-size: 0.8rem;">Promote</button>
+                        {% endif %}
+                    </form>
+                    {% else %}
+                    <span style="color: #7f8c8d; font-size: 0.8rem;">(You)</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #7f8c8d; text-align: center; padding: 20px;">No users registered yet.</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Add User Manually</h2>
+    <form action="/admin/users/add" method="POST">
+        <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end;">
+            <div>
+                <label style="display: block; margin-bottom: 5px; font-weight: 500;">GitLab Username</label>
+                <input type="text" name="gitlab_username" required
+                       style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+            <div>
+                <label style="display: block; margin-bottom: 5px; font-weight: 500;">GitLab ID</label>
+                <input type="number" name="gitlab_id" required
+                       style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+            <button type="submit" class="btn btn-primary">Add User</button>
+        </div>
+    </form>
+    <p style="margin-top: 10px; font-size: 0.85rem; color: #7f8c8d;">
+        Manually add a user with a generated API key. The user can also self-register via GitLab OAuth.
+    </p>
+</div>
+{% endblock %}

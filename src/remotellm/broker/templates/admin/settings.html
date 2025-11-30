@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - RemoteLLM{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 20px;">Settings</h1>
+
+{% if message %}
+<div class="alert alert-{% if message_type == 'error' %}danger{% else %}success{% endif %}">
+    {{ message }}
+</div>
+{% endif %}
+
+<div class="card">
+    <h2>System Preprompts</h2>
+    <p style="color: #7f8c8d; margin-bottom: 15px;">
+        Configure system prompts that will be prepended to all chat requests. The default preprompt is automatically used for requests without a system message.
+    </p>
+
+    {% if preprompts %}
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Content Preview</th>
+                <th>Status</th>
+                <th>Updated</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in preprompts %}
+            <tr>
+                <td><strong>{{ p.name }}</strong></td>
+                <td>
+                    <code style="font-size: 0.8rem;">{{ p.content[:50] }}{% if p.content|length > 50 %}...{% endif %}</code>
+                </td>
+                <td>
+                    {% if p.is_default %}
+                    <span class="badge badge-success">Default</span>
+                    {% else %}
+                    <span class="badge badge-info">Available</span>
+                    {% endif %}
+                </td>
+                <td>{{ p.updated_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>
+                    <form action="/admin/settings" method="POST" style="display: inline;">
+                        <input type="hidden" name="action" value="set_default">
+                        <input type="hidden" name="name" value="{{ p.name }}">
+                        {% if not p.is_default %}
+                        <button type="submit" class="btn btn-success" style="padding: 5px 10px; font-size: 0.8rem;">Set Default</button>
+                        {% endif %}
+                    </form>
+                    <form action="/admin/settings" method="POST" style="display: inline;">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="name" value="{{ p.name }}">
+                        <button type="submit" class="btn btn-danger" style="padding: 5px 10px; font-size: 0.8rem;"
+                                onclick="return confirm('Delete preprompt {{ p.name }}?')">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #7f8c8d; text-align: center; padding: 20px;">No preprompts configured yet.</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Add / Edit Preprompt</h2>
+    <form action="/admin/settings" method="POST">
+        <input type="hidden" name="action" value="save">
+        <div style="margin-bottom: 15px;">
+            <label style="display: block; margin-bottom: 5px; font-weight: 500;">Name</label>
+            <input type="text" name="name" required placeholder="e.g., coding-assistant"
+                   style="width: 100%; max-width: 400px; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+            <p style="margin-top: 5px; font-size: 0.85rem; color: #7f8c8d;">
+                A unique identifier for this preprompt. Use the same name to update an existing preprompt.
+            </p>
+        </div>
+        <div style="margin-bottom: 15px;">
+            <label style="display: block; margin-bottom: 5px; font-weight: 500;">System Prompt Content</label>
+            <textarea name="content" rows="6" required placeholder="You are a helpful coding assistant..."
+                      style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace;"></textarea>
+        </div>
+        <div style="margin-bottom: 15px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" name="is_default">
+                <span>Set as default preprompt</span>
+            </label>
+        </div>
+        <button type="submit" class="btn btn-primary">Save Preprompt</button>
+    </form>
+</div>
+
+{% if default_preprompt %}
+<div class="card">
+    <h2>Current Default Preprompt</h2>
+    <div style="background: #f8f9fa; padding: 15px; border-radius: 4px; font-family: monospace; white-space: pre-wrap;">{{ default_preprompt.content }}</div>
+</div>
+{% endif %}
+{% endblock %}

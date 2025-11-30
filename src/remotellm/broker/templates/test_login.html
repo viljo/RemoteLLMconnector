@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Login - RemoteLLM (Test Mode){% endblock %}
+
+{% block nav %}
+<nav>
+    <span class="brand">RemoteLLM</span>
+    <span style="background: #e74c3c; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; margin-left: 10px;">TEST MODE</span>
+    <div class="nav-links"></div>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div style="max-width: 400px; margin: 100px auto; text-align: center;">
+    <div class="card">
+        <h2>Welcome to RemoteLLM</h2>
+        <p style="margin-bottom: 20px; color: #7f8c8d;">
+            Test mode is enabled. Enter any username to log in.
+        </p>
+
+        {% if error %}
+        <div style="background: #fee; color: #c00; padding: 10px; border-radius: 4px; margin-bottom: 20px;">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        <form method="POST" action="/auth/login">
+            <div style="margin-bottom: 20px;">
+                <input
+                    type="text"
+                    name="username"
+                    placeholder="Enter username (e.g., testuser)"
+                    style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem; box-sizing: border-box;"
+                    autofocus
+                    required
+                >
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%; display: block;">
+                Login
+            </button>
+        </form>
+
+        <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 4px; color: #856404; font-size: 0.85rem;">
+            <strong>Test Mode Active</strong><br>
+            OAuth authentication is bypassed. The first user to log in becomes an administrator.
+        </div>
+
+        <p style="margin-top: 20px; font-size: 0.85rem; color: #95a5a6;">
+            Suggested test usernames:<br>
+            <code>admin</code>, <code>user1</code>, <code>user2</code>
+        </p>
+    </div>
+</div>
+{% endblock %}

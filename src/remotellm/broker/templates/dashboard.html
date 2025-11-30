@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - RemoteLLM{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 20px;">Your API Access</h1>
+
+<div class="grid grid-2">
+    <div class="card">
+        <h2>API Credentials</h2>
+        <p style="margin-bottom: 10px;"><strong>API URL:</strong></p>
+        <div class="code-block">
+            <button class="copy-btn" onclick="copyToClipboard('{{ api_url }}', this)">Copy</button>
+            {{ api_url }}
+        </div>
+
+        <p style="margin: 20px 0 10px;"><strong>API Key:</strong></p>
+        <div class="code-block">
+            <button class="copy-btn" onclick="copyToClipboard('{{ api_key }}', this)">Copy</button>
+            {{ api_key }}
+        </div>
+
+        <div class="alert alert-info" style="margin-top: 20px;">
+            <strong>Tip:</strong> Use these credentials with any OpenAI-compatible client like Cline, Continue, or curl.
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Available Models</h2>
+        {% if models %}
+        <p style="margin-bottom: 15px;">The following models are currently available:</p>
+        <div>
+            {% for model in models %}
+            <span class="model-tag">{{ model }}</span>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p style="color: #7f8c8d;">No models are currently available. Please wait for connectors to register.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <h2>Quick Start Example</h2>
+    <p style="margin-bottom: 15px;">Use this curl command to test your API access:</p>
+    <div class="code-block">
+        <button class="copy-btn" onclick="copyToClipboard(document.getElementById('curl-example').textContent, this)">Copy</button>
+        <pre id="curl-example">curl {{ api_url }}/chat/completions \
+  -H "Authorization: Bearer {{ api_key }}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "{% if models %}{{ models[0] }}{% else %}model-name{% endif %}",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'</pre>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Configure Your Tools</h2>
+    <div class="grid grid-2">
+        <div>
+            <h3 style="margin-bottom: 10px;">Cline (VS Code)</h3>
+            <ol style="padding-left: 20px; color: #7f8c8d;">
+                <li>Open Cline settings</li>
+                <li>Set API Provider to "OpenAI Compatible"</li>
+                <li>Set Base URL to: <code>{{ api_url }}</code></li>
+                <li>Set API Key to: <code>{{ api_key[:20] }}...</code></li>
+            </ol>
+        </div>
+        <div>
+            <h3 style="margin-bottom: 10px;">Environment Variables</h3>
+            <div class="code-block" style="font-size: 0.8rem;">
+                <pre>export OPENAI_API_BASE="{{ api_url }}"
+export OPENAI_API_KEY="{{ api_key }}"</pre>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

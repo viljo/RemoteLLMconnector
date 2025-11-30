@@ -1,0 +1,227 @@
+openapi: 3.1.0
+info:
+  title: RemoteLLM OAuth Authentication API
+  version: 1.0.0
+  description: |
+    OAuth authentication endpoints for self-service API key issuance.
+    Users authenticate via GitLab OAuth and receive an API key for LLM access.
+
+servers:
+  - url: https://broker.example.com
+    description: Production broker
+
+paths:
+  /auth/login:
+    get:
+      summary: Initiate GitLab OAuth login
+      description: |
+        Displays a login page with "Login with GitLab" button.
+        When clicked, redirects to GitLab OAuth authorization URL.
+      operationId: authLogin
+      responses:
+        '200':
+          description: Login page HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        '503':
+          description: OAuth not configured
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /auth/gitlab:
+    get:
+      summary: Redirect to GitLab OAuth
+      description: |
+        Generates OAuth state token, stores in session cookie,
+        and redirects to GitLab authorization URL.
+      operationId: authGitlabRedirect
+      responses:
+        '302':
+          description: Redirect to GitLab OAuth
+          headers:
+            Location:
+              description: GitLab OAuth authorization URL
+              schema:
+                type: string
+                format: uri
+            Set-Cookie:
+              description: Encrypted session cookie with OAuth state
+              schema:
+                type: string
+        '503':
+          description: OAuth not configured
+
+  /auth/callback:
+    get:
+      summary: GitLab OAuth callback
+      description: |
+        Handles OAuth callback from GitLab.
+        Validates state, exchanges code for token, fetches user info,
+        creates or retrieves API key, and displays success page.
+      operationId: authCallback
+      parameters:
+        - name: code
+          in: query
+          required: true
+          description: Authorization code from GitLab
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: true
+          description: State parameter for CSRF protection
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success page with API key and LLM URL
+          content:
+            text/html:
+              schema:
+                type: string
+              example: |
+                <html>
+                  <body>
+                    <h1>Welcome, alice!</h1>
+                    <p>Your API Key: sk-abc123...</p>
+                    <p>LLM API URL: https://broker.example.com/v1</p>
+                    <pre>curl https://broker.example.com/v1/chat/completions ...</pre>
+                  </body>
+                </html>
+        '400':
+          description: Invalid state (CSRF detected) or missing parameters
+          content:
+            text/html:
+              schema:
+                type: string
+        '403':
+          description: User is blocked
+          content:
+            text/html:
+              schema:
+                type: string
+        '500':
+          description: GitLab communication error or internal error
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /auth/logout:
+    get:
+      summary: Clear session and logout
+      description: Clears session cookie and redirects to login page.
+      operationId: authLogout
+      responses:
+        '302':
+          description: Redirect to login page
+          headers:
+            Location:
+              schema:
+                type: string
+                example: /auth/login
+            Set-Cookie:
+              description: Cookie deletion
+              schema:
+                type: string
+
+components:
+  schemas:
+    User:
+      type: object
+      description: User record stored in users.yaml
+      required:
+        - gitlab_username
+        - gitlab_id
+        - api_key
+        - created_at
+        - blocked
+      properties:
+        gitlab_username:
+          type: string
+          description: GitLab username
+          example: alice
+        gitlab_id:
+          type: integer
+          description: GitLab user ID (immutable)
+          example: 12345
+        api_key:
+          type: string
+          description: Generated API key
+          pattern: ^sk-[a-f0-9]{32}$
+          example: sk-a1b2c3d4e5f6789012345678901234ab
+        created_at:
+          type: string
+          format: date-time
+          description: When user first authenticated
+          example: "2025-11-30T10:00:00Z"
+        last_used:
+          type: string
+          format: date-time
+          nullable: true
+          description: Last API request timestamp
+          example: "2025-11-30T15:30:00Z"
+        blocked:
+          type: boolean
+          description: Whether user is blocked from API access
+          default: false
+
+    UsersFile:
+      type: object
+      description: Root structure of users.yaml file
+      required:
+        - users
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+
+    OAuthConfig:
+      type: object
+      description: OAuth configuration section in broker config
+      required:
+        - gitlab_url
+        - client_id
+        - client_secret
+        - redirect_uri
+        - session_secret
+        - users_file
+        - public_url
+      properties:
+        gitlab_url:
+          type: string
+          format: uri
+          description: GitLab instance URL
+          default: https://gitlab.com
+          example: https://gitlab.com
+        client_id:
+          type: string
+          description: GitLab OAuth application client ID
+          example: your-gitlab-app-id
+        client_secret:
+          type: string
+          description: GitLab OAuth application client secret
+          example: your-gitlab-app-secret
+        redirect_uri:
+          type: string
+          format: uri
+          description: OAuth callback URL
+          example: https://broker.example.com/auth/callback
+        session_secret:
+          type: string
+          description: Secret for encrypting session cookies (32+ bytes)
+          minLength: 32
+        users_file:
+          type: string
+          description: Path to users.yaml file
+          example: /etc/remotellm/users.yaml
+        public_url:
+          type: string
+          format: uri
+          description: Public URL shown to users on success page
+          example: https://broker.example.com
