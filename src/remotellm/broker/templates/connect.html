@@ -1,24 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Connect Your LLM - RemoteLLM{% endblock %}
+{% block title %}Connect LLM - RemoteLLM{% endblock %}
 
 {% block content %}
 <h1 style="margin-bottom: 20px;">Connect Your LLM</h1>
 
 <div class="alert alert-info">
     <strong>Share your local LLM!</strong> Run the RemoteLLM connector on any machine with an OpenAI-compatible LLM server to make it available through this broker.
-</div>
-
-<div class="card">
-    <h2>Connection Details</h2>
-    <p style="margin-bottom: 10px;"><strong>Broker WebSocket URL:</strong></p>
-    <div class="code-block">
-        <button class="copy-btn" onclick="copyToClipboard('{{ ws_url }}', this)">Copy</button>
-        {{ ws_url }}
-    </div>
-    <div class="alert alert-success" style="margin-top: 15px;">
-        <strong>No token required!</strong> New connectors enter a pending state and wait for admin approval. Once approved, your connector automatically receives and saves an API key for future connections.
-    </div>
 </div>
 
 <div class="card">

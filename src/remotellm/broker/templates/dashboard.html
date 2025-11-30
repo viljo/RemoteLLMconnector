@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - RemoteLLM{% endblock %}
+{% block title %}Connect API - RemoteLLM{% endblock %}
 
 {% block content %}
 <h1 style="margin-bottom: 20px;">Your API Access</h1>
@@ -26,64 +26,53 @@
     </div>
 
     <div class="card">
-        <h2>Available Models</h2>
-        {% if models %}
-        <p style="margin-bottom: 15px;">The following models are currently available:</p>
-        <div>
-            {% for model in models %}
-            <span class="model-tag">{{ model }}</span>
-            {% endfor %}
+        <h2>Available Models <button onclick="refreshModels()" style="float: right; padding: 5px 10px; font-size: 0.8rem; cursor: pointer;">Refresh</button></h2>
+        <div id="models-list">
+            {% if models %}
+            <p style="margin-bottom: 15px;">The following models are currently available:</p>
+            <div>
+                {% for model in models %}
+                <span class="model-tag">{{ model }}</span>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p style="color: #7f8c8d;">No models are currently available. Please wait for connectors to register.</p>
+            {% endif %}
         </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Cline CLI Authentication <button onclick="refreshModels()" style="float: right; padding: 5px 10px; font-size: 0.8rem; cursor: pointer;">Refresh</button></h2>
+    <p style="margin-bottom: 15px;">Copy-paste these commands to configure Cline CLI for each model:</p>
+    <div id="cline-table">
+        {% if models %}
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="border-bottom: 2px solid #3d3d3d;">
+                    <th style="text-align: left; padding: 10px 5px;">Model</th>
+                    <th style="text-align: left; padding: 10px 5px;">Cline Auth Command</th>
+                    <th style="padding: 10px 5px; width: 60px;">Copy</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for model in models %}
+                <tr style="border-bottom: 1px solid #3d3d3d;">
+                    <td style="padding: 10px 5px;"><span class="model-tag">{{ model }}</span></td>
+                    <td style="padding: 10px 5px;">
+                        <code id="cline-cmd-{{ loop.index }}" style="font-size: 0.85rem; word-break: break-all;">cline auth -p openai-compatible -b {{ api_url }} -k {{ api_key }} -m {{ model }}</code>
+                    </td>
+                    <td style="padding: 10px 5px; text-align: center;">
+                        <button class="copy-btn" onclick="copyToClipboard(document.getElementById('cline-cmd-{{ loop.index }}').textContent, this)" style="position: relative;">Copy</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
         {% else %}
-        <p style="color: #7f8c8d;">No models are currently available. Please wait for connectors to register.</p>
+        <p style="color: #7f8c8d;">No models available yet.</p>
         {% endif %}
     </div>
-</div>
-
-<div class="card">
-    <h2>Quick Start Example</h2>
-    <p style="margin-bottom: 15px;">Use this curl command to test your API access:</p>
-    <div class="code-block">
-        <button class="copy-btn" onclick="copyToClipboard(document.getElementById('curl-example').textContent, this)">Copy</button>
-        <pre id="curl-example">curl {{ api_url }}/chat/completions \
-  -H "Authorization: Bearer {{ api_key }}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "{% if models %}{{ models[0] }}{% else %}model-name{% endif %}",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'</pre>
-    </div>
-</div>
-
-<div class="card">
-    <h2>Cline CLI Authentication</h2>
-    <p style="margin-bottom: 15px;">Copy-paste these commands to configure Cline CLI for each model:</p>
-    {% if models %}
-    <table style="width: 100%; border-collapse: collapse;">
-        <thead>
-            <tr style="border-bottom: 2px solid #3d3d3d;">
-                <th style="text-align: left; padding: 10px 5px;">Model</th>
-                <th style="text-align: left; padding: 10px 5px;">Cline Auth Command</th>
-                <th style="padding: 10px 5px; width: 60px;">Copy</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for model in models %}
-            <tr style="border-bottom: 1px solid #3d3d3d;">
-                <td style="padding: 10px 5px;"><span class="model-tag">{{ model }}</span></td>
-                <td style="padding: 10px 5px;">
-                    <code id="cline-cmd-{{ loop.index }}" style="font-size: 0.85rem; word-break: break-all;">cline auth -p openai-compatible -b {{ api_url }} -k {{ api_key }} -m {{ model }}</code>
-                </td>
-                <td style="padding: 10px 5px; text-align: center;">
-                    <button class="copy-btn" onclick="copyToClipboard(document.getElementById('cline-cmd-{{ loop.index }}').textContent, this)" style="position: relative;">Copy</button>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-    <p style="color: #7f8c8d;">No models available yet.</p>
-    {% endif %}
 </div>
 
 <div class="card">
@@ -107,4 +96,81 @@ export OPENAI_API_KEY="{{ api_key }}"</pre>
         </div>
     </div>
 </div>
+
+<div class="card">
+    <h2>API Test Example</h2>
+    <p style="margin-bottom: 15px;">Use this curl command to test your API access:</p>
+    <div class="code-block">
+        <button class="copy-btn" onclick="copyToClipboard(document.getElementById('curl-example').textContent, this)">Copy</button>
+        <pre id="curl-example">curl {{ api_url }}/chat/completions \
+  -H "Authorization: Bearer {{ api_key }}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "{% if models %}{{ models[0] }}{% else %}model-name{% endif %}",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'</pre>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const apiUrl = "{{ api_url }}";
+const apiKey = "{{ api_key }}";
+
+async function refreshModels() {
+    try {
+        const response = await fetch('/v1/models', {
+            headers: {
+                'Authorization': 'Bearer ' + apiKey
+            }
+        });
+        const data = await response.json();
+        const models = data.data ? data.data.map(m => m.id) : [];
+
+        // Update models list
+        const modelsList = document.getElementById('models-list');
+        if (models.length > 0) {
+            modelsList.innerHTML = '<p style="margin-bottom: 15px;">The following models are currently available:</p><div>' +
+                models.map(m => '<span class="model-tag">' + m + '</span>').join('') + '</div>';
+        } else {
+            modelsList.innerHTML = '<p style="color: #7f8c8d;">No models are currently available. Please wait for connectors to register.</p>';
+        }
+
+        // Update Cline table
+        const clineTable = document.getElementById('cline-table');
+        if (models.length > 0) {
+            let tableHtml = '<table style="width: 100%; border-collapse: collapse;"><thead><tr style="border-bottom: 2px solid #3d3d3d;">' +
+                '<th style="text-align: left; padding: 10px 5px;">Model</th>' +
+                '<th style="text-align: left; padding: 10px 5px;">Cline Auth Command</th>' +
+                '<th style="padding: 10px 5px; width: 60px;">Copy</th></tr></thead><tbody>';
+
+            models.forEach((model, idx) => {
+                const cmd = 'cline auth -p openai-compatible -b ' + apiUrl + ' -k ' + apiKey + ' -m ' + model;
+                tableHtml += '<tr style="border-bottom: 1px solid #3d3d3d;">' +
+                    '<td style="padding: 10px 5px;"><span class="model-tag">' + model + '</span></td>' +
+                    '<td style="padding: 10px 5px;"><code id="cline-cmd-dyn-' + idx + '" style="font-size: 0.85rem; word-break: break-all;">' + cmd + '</code></td>' +
+                    '<td style="padding: 10px 5px; text-align: center;"><button class="copy-btn" onclick="copyToClipboard(document.getElementById(\'cline-cmd-dyn-' + idx + '\').textContent, this)" style="position: relative;">Copy</button></td></tr>';
+            });
+            tableHtml += '</tbody></table>';
+            clineTable.innerHTML = tableHtml;
+        } else {
+            clineTable.innerHTML = '<p style="color: #7f8c8d;">No models available yet.</p>';
+        }
+
+        // Update curl example model
+        const curlExample = document.getElementById('curl-example');
+        const currentText = curlExample.textContent;
+        const modelMatch = currentText.match(/"model": "([^"]+)"/);
+        if (modelMatch && models.length > 0) {
+            curlExample.textContent = currentText.replace(/"model": "[^"]+"/, '"model": "' + models[0] + '"');
+        }
+    } catch (e) {
+        console.error('Failed to refresh models:', e);
+    }
+}
+
+// Auto-refresh every 30 seconds
+setInterval(refreshModels, 30000);
+</script>
 {% endblock %}

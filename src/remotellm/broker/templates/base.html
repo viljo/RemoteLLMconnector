@@ -233,12 +233,12 @@
         <div class="nav-links">
             {% if user %}
             <a href="/chat" {% if request.path == '/chat' %}class="active"{% endif %}>Chat</a>
-            <a href="/dashboard" {% if request.path == '/dashboard' %}class="active"{% endif %}>Dashboard</a>
+            <a href="/dashboard" {% if request.path == '/dashboard' %}class="active"{% endif %}>Connect API</a>
             {% if is_admin %}
-            <a href="/connect" {% if request.path == '/connect' %}class="active"{% endif %}>Connect</a>
-            <a href="/admin" {% if request.path == '/admin' %}class="active"{% endif %}>Admin</a>
-            <a href="/admin/connectors" {% if request.path == '/admin/connectors' %}class="active"{% endif %}>Connectors</a>
+            <a href="/connect" {% if request.path == '/connect' %}class="active"{% endif %}>Connect LLM</a>
+            <a href="/admin/connectors" {% if request.path == '/admin/connectors' %}class="active"{% endif %}>LLM Providers</a>
             <a href="/admin/settings" {% if request.path == '/admin/settings' %}class="active"{% endif %}>Settings</a>
+            <a href="/admin" {% if request.path == '/admin' %}class="active"{% endif %}>Admin</a>
             {% endif %}
             <a href="/auth/logout">Logout</a>
             {% endif %}
