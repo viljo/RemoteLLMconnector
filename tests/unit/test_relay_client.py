@@ -583,7 +583,8 @@ class TestRelayClientReconnect:
         await client._handle_reconnect()
 
         assert client._reconnect_attempt == 1
-        assert client.state == ConnectionState.RECONNECTING
+        # After reconnect delay, state is reset to DISCONNECTED so run() loop will reconnect
+        assert client.state == ConnectionState.DISCONNECTED
 
     async def test_handle_reconnect_exponential_backoff(self):
         """Test exponential backoff calculation."""

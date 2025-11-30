@@ -217,26 +217,34 @@ class RelayClient:
                 error = response.payload.get("error", "Unknown error")
                 logger.error("Authentication failed", error=error)
                 self._state = ConnectionState.DISCONNECTED
-                await self._ws.close()
+                ws = self._ws
+                self._ws = None
+                await ws.close()
                 return False
 
             else:
                 logger.error("Unexpected auth response", type=response.type)
                 self._state = ConnectionState.DISCONNECTED
-                await self._ws.close()
+                ws = self._ws
+                self._ws = None
+                await ws.close()
                 return False
 
         except TimeoutError:
             logger.error("Authentication timeout")
             self._state = ConnectionState.DISCONNECTED
             if self._ws:
-                await self._ws.close()
+                ws = self._ws
+                self._ws = None
+                await ws.close()
             return False
         except Exception as e:
             logger.error("Connection failed", error=str(e))
             self._state = ConnectionState.DISCONNECTED
             if self._ws:
-                await self._ws.close()
+                ws = self._ws
+                self._ws = None
+                await ws.close()
             return False
 
     async def send_message(self, message: RelayMessage) -> None:
@@ -272,16 +280,12 @@ class RelayClient:
                 logger.warning("Connection closed", code=e.code, reason=e.reason)
                 self._stop_keepalive()
                 self._ws = None  # Clear old connection
-                self._state = ConnectionState.DISCONNECTED
                 await self._handle_reconnect()
-                self._state = ConnectionState.DISCONNECTED  # Reset after delay so loop reconnects
             except Exception as e:
                 logger.error("Message loop error", error=str(e))
                 self._stop_keepalive()
                 self._ws = None  # Clear old connection
-                self._state = ConnectionState.DISCONNECTED
                 await self._handle_reconnect()
-                self._state = ConnectionState.DISCONNECTED  # Reset after delay so loop reconnects
 
     async def _message_loop(self) -> None:
         """Process incoming messages."""
@@ -353,12 +357,14 @@ class RelayClient:
         # Trigger reconnection to properly register with models
         # The pending connection doesn't have models registered with the router,
         # so we need to close and reconnect with the new API key
-        self._state = ConnectionState.DISCONNECTED
         self._reconnect_attempt = 0  # Reset so reconnect is immediate
 
-        # Close the websocket to trigger reconnection in run() loop
+        # Close the websocket and clear reference to trigger reconnection
         if self._ws:
-            await self._ws.close()
+            ws = self._ws
+            self._ws = None  # Clear before closing to avoid stale reference
+            self._state = ConnectionState.DISCONNECTED
+            await ws.close()
 
     async def _handle_revoked(self, message: RelayMessage) -> None:
         """Handle REVOKED message from broker.
@@ -377,12 +383,12 @@ class RelayClient:
         self._clear_credentials()
         self.broker_token = None
 
-        # Transition to disconnected - will trigger reconnect
-        self._state = ConnectionState.DISCONNECTED
-
-        # Close the websocket
+        # Close the websocket and clear reference
         if self._ws:
-            await self._ws.close()
+            ws = self._ws
+            self._ws = None  # Clear before closing to avoid stale reference
+            self._state = ConnectionState.DISCONNECTED
+            await ws.close()
 
     async def _keepalive_loop(self) -> None:
         """Send periodic keepalive pings to maintain connection."""
@@ -417,6 +423,7 @@ class RelayClient:
 
         Will retry indefinitely until stopped or connection succeeds.
         Delay is capped at reconnect_max_delay (default 5 minutes).
+        After delay, state is reset to DISCONNECTED so the run() loop will attempt reconnection.
         """
         if not self._running:
             return
@@ -441,6 +448,9 @@ class RelayClient:
             max_delay=f"{self.reconnect_max_delay:.0f}s",
         )
         await asyncio.sleep(delay)
+
+        # Reset state to DISCONNECTED so run() loop will attempt connection
+        self._state = ConnectionState.DISCONNECTED
 
     async def stop(self) -> None:
         """Stop the relay client."""
