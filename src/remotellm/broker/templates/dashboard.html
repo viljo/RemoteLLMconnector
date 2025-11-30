@@ -56,10 +56,41 @@
 </div>
 
 <div class="card">
-    <h2>Configure Your Tools</h2>
+    <h2>Cline CLI Authentication</h2>
+    <p style="margin-bottom: 15px;">Copy-paste these commands to configure Cline CLI for each model:</p>
+    {% if models %}
+    <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+            <tr style="border-bottom: 2px solid #3d3d3d;">
+                <th style="text-align: left; padding: 10px 5px;">Model</th>
+                <th style="text-align: left; padding: 10px 5px;">Cline Auth Command</th>
+                <th style="padding: 10px 5px; width: 60px;">Copy</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for model in models %}
+            <tr style="border-bottom: 1px solid #3d3d3d;">
+                <td style="padding: 10px 5px;"><span class="model-tag">{{ model }}</span></td>
+                <td style="padding: 10px 5px;">
+                    <code id="cline-cmd-{{ loop.index }}" style="font-size: 0.85rem; word-break: break-all;">cline auth -p openai-compatible -b {{ api_url }} -k {{ api_key }} -m {{ model }}</code>
+                </td>
+                <td style="padding: 10px 5px; text-align: center;">
+                    <button class="copy-btn" onclick="copyToClipboard(document.getElementById('cline-cmd-{{ loop.index }}').textContent, this)" style="position: relative;">Copy</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #7f8c8d;">No models available yet.</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Other Tools Configuration</h2>
     <div class="grid grid-2">
         <div>
-            <h3 style="margin-bottom: 10px;">Cline (VS Code)</h3>
+            <h3 style="margin-bottom: 10px;">VS Code Cline Extension</h3>
             <ol style="padding-left: 20px; color: #7f8c8d;">
                 <li>Open Cline settings</li>
                 <li>Set API Provider to "OpenAI Compatible"</li>

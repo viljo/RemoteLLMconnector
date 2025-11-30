@@ -75,7 +75,7 @@ class ConnectorConfig(BaseSettings):
         default=1.0,
         description="Base delay for exponential backoff reconnection",
     )
-    reconnect_max_retries: int = Field(
-        default=5,
-        description="Maximum reconnection attempts before extended wait",
+    reconnect_max_delay: float = Field(
+        default=300.0,
+        description="Maximum delay between reconnection attempts (seconds)",
     )

@@ -226,6 +226,7 @@
             <a href="/chat" {% if request.path == '/chat' %}class="active"{% endif %}>Chat</a>
             <a href="/dashboard" {% if request.path == '/dashboard' %}class="active"{% endif %}>Dashboard</a>
             {% if is_admin %}
+            <a href="/connect" {% if request.path == '/connect' %}class="active"{% endif %}>Connect</a>
             <a href="/admin" {% if request.path == '/admin' %}class="active"{% endif %}>Admin</a>
             <a href="/admin/settings" {% if request.path == '/admin/settings' %}class="active"{% endif %}>Settings</a>
             {% endif %}

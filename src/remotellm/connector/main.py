@@ -240,6 +240,57 @@ class Connector:
             )
             await self.tunnel_client.send_message(error_msg)
 
+    def _normalize_model_name(self, model_id: str) -> str:
+        """Normalize a model ID to a clean model name.
+
+        Handles paths like '/opt/llama.cpp/models/meta-llama-3.1-8b-instruct-q4_k_m.gguf'
+        and converts them to clean names like 'meta-llama-3.1-8b-instruct'.
+
+        Args:
+            model_id: Raw model ID from LLM server
+
+        Returns:
+            Normalized model name
+        """
+        import os
+        import re
+
+        # Extract filename from path
+        name = os.path.basename(model_id)
+
+        # Remove common file extensions
+        extensions = [".gguf", ".bin", ".safetensors", ".pt", ".pth", ".onnx"]
+        for ext in extensions:
+            if name.lower().endswith(ext):
+                name = name[: -len(ext)]
+                break
+
+        # Remove quantization suffixes (e.g., -q4_k_m, -Q4_K_M, -q8_0)
+        name = re.sub(r"[-_][qQ]\d+[_kKmM]*[_\d]*$", "", name)
+
+        return name
+
+    async def _discover_models(self) -> list[str]:
+        """Discover available models from the LLM server.
+
+        Returns:
+            List of model IDs available on the LLM server
+        """
+        try:
+            models_data = await self.llm_client.get_models()
+            raw_models = [m["id"] for m in models_data.get("data", [])]
+            models = [self._normalize_model_name(m) for m in raw_models]
+            logger.info(
+                "Discovered models from LLM",
+                raw_models=raw_models,
+                normalized_models=models,
+                count=len(models),
+            )
+            return models
+        except Exception as e:
+            logger.warning("Failed to discover models from LLM", error=str(e))
+            return []
+
     async def run(self) -> None:
         """Run the connector."""
         configure_logging(self.config.log_level)
@@ -247,14 +298,23 @@ class Connector:
             "Starting connector", llm_url=self.config.llm_url, broker_url=self.config.broker_url
         )
 
+        # Discover models from LLM server (use config.models as override if specified)
+        if self.config.models:
+            models = self.config.models
+            logger.info("Using configured models", models=models)
+        else:
+            models = await self._discover_models()
+            if not models:
+                logger.warning("No models discovered, connector will still connect")
+
         # Create tunnel client with models list
         self.tunnel_client = TunnelClient(
             broker_url=self.config.broker_url,
             broker_token=self.config.broker_token,
             request_handler=self._handle_request,
-            models=self.config.models,
+            models=models,
             reconnect_base_delay=self.config.reconnect_base_delay,
-            reconnect_max_retries=self.config.reconnect_max_retries,
+            reconnect_max_delay=self.config.reconnect_max_delay,
         )
 
         # Start health server
