@@ -271,13 +271,17 @@ class TunnelClient:
             except websockets.ConnectionClosed as e:
                 logger.warning("Connection closed", code=e.code, reason=e.reason)
                 self._stop_keepalive()
+                self._ws = None  # Clear old connection
                 self._state = ConnectionState.DISCONNECTED
                 await self._handle_reconnect()
+                self._state = ConnectionState.DISCONNECTED  # Reset after delay so loop reconnects
             except Exception as e:
                 logger.error("Message loop error", error=str(e))
                 self._stop_keepalive()
+                self._ws = None  # Clear old connection
                 self._state = ConnectionState.DISCONNECTED
                 await self._handle_reconnect()
+                self._state = ConnectionState.DISCONNECTED  # Reset after delay so loop reconnects
 
     async def _message_loop(self) -> None:
         """Process incoming messages."""
@@ -340,15 +344,21 @@ class TunnelClient:
         # Update our token for future connections
         self.broker_token = payload.api_key
 
-        # Transition to connected state
-        self._state = ConnectionState.CONNECTED
-        self._reconnect_attempt = 0
-
         logger.info(
-            "Connector now active",
+            "Reconnecting with new API key to complete registration",
             connector_id=self._connector_id,
             credentials_saved=self.credentials_file is not None,
         )
+
+        # Trigger reconnection to properly register with models
+        # The pending connection doesn't have models registered with the router,
+        # so we need to close and reconnect with the new API key
+        self._state = ConnectionState.DISCONNECTED
+        self._reconnect_attempt = 0  # Reset so reconnect is immediate
+
+        # Close the websocket to trigger reconnection in run() loop
+        if self._ws:
+            await self._ws.close()
 
     async def _handle_revoked(self, message: TunnelMessage) -> None:
         """Handle REVOKED message from broker.
