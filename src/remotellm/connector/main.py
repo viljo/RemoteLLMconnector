@@ -254,7 +254,7 @@ class Connector:
             request_handler=self._handle_request,
             models=self.config.models,
             reconnect_base_delay=self.config.reconnect_base_delay,
-            reconnect_max_retries=self.config.reconnect_max_retries,
+            reconnect_max_delay=self.config.reconnect_max_delay,
         )
 
         # Start health server

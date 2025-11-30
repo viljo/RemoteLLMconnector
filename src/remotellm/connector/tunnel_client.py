@@ -276,7 +276,10 @@ class TunnelClient:
         """Stop the tunnel client."""
         self._running = False
         self._stop_keepalive()
-        if self._ws and not self._ws.closed:
-            await self._ws.close()
+        if self._ws:
+            try:
+                await self._ws.close()
+            except Exception:
+                pass  # Connection may already be closed
         self._state = ConnectionState.DISCONNECTED
         logger.info("Tunnel client stopped")
