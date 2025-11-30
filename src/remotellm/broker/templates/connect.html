@@ -11,20 +11,38 @@
 
 <div class="card">
     <h2>Connection Details</h2>
-    <div class="grid grid-2">
-        <div>
-            <p style="margin-bottom: 10px;"><strong>Broker WebSocket URL:</strong></p>
-            <div class="code-block">
-                <button class="copy-btn" onclick="copyToClipboard('{{ ws_url }}', this)">Copy</button>
-                {{ ws_url }}
-            </div>
+    <p style="margin-bottom: 10px;"><strong>Broker WebSocket URL:</strong></p>
+    <div class="code-block">
+        <button class="copy-btn" onclick="copyToClipboard('{{ ws_url }}', this)">Copy</button>
+        {{ ws_url }}
+    </div>
+    <div class="alert alert-success" style="margin-top: 15px;">
+        <strong>No token required!</strong> New connectors enter a pending state and wait for admin approval. Once approved, your connector automatically receives and saves an API key for future connections.
+    </div>
+</div>
+
+<div class="card">
+    <h2>How It Works</h2>
+    <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 200px; text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+            <div style="font-size: 2rem; margin-bottom: 10px;">1</div>
+            <strong>Connect</strong>
+            <p style="font-size: 0.9rem; color: #666; margin-top: 5px;">Run the connector without a token</p>
         </div>
-        <div>
-            <p style="margin-bottom: 10px;"><strong>Your Connector Token:</strong></p>
-            <div class="code-block">
-                <button class="copy-btn" onclick="copyToClipboard('{{ connector_token }}', this)">Copy</button>
-                {{ connector_token }}
-            </div>
+        <div style="flex: 1; min-width: 200px; text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+            <div style="font-size: 2rem; margin-bottom: 10px;">2</div>
+            <strong>Pending</strong>
+            <p style="font-size: 0.9rem; color: #666; margin-top: 5px;">Connector waits for admin approval</p>
+        </div>
+        <div style="flex: 1; min-width: 200px; text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+            <div style="font-size: 2rem; margin-bottom: 10px;">3</div>
+            <strong>Approved</strong>
+            <p style="font-size: 0.9rem; color: #666; margin-top: 5px;">Admin approves, API key sent automatically</p>
+        </div>
+        <div style="flex: 1; min-width: 200px; text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+            <div style="font-size: 2rem; margin-bottom: 10px;">4</div>
+            <strong>Active</strong>
+            <p style="font-size: 0.9rem; color: #666; margin-top: 5px;">Connector saves key and serves requests</p>
         </div>
     </div>
 </div>
@@ -52,13 +70,17 @@ pip install -e .</pre>
     <div class="code-block">
         <button class="copy-btn" onclick="copyToClipboard(document.getElementById('run-cmd').textContent, this)">Copy</button>
         <pre id="run-cmd">remotellm-connector \
-  --llm-url http://localhost:8000 \
+  --llm-url http://localhost:11434 \
   --broker-url {{ ws_url }} \
-  --broker-token {{ connector_token }}</pre>
+  --connector-name "My Home Server"</pre>
+    </div>
+
+    <div class="alert alert-info" style="margin-top: 15px;">
+        <strong>First Run:</strong> The connector will enter <em>pending</em> state. Ask an admin to approve your connector at <a href="/admin/connectors">/admin/connectors</a>. Once approved, your API key is automatically saved to <code>~/.remotellm/credentials.yaml</code>.
     </div>
 
     <div class="alert alert-success" style="margin-top: 15px;">
-        <strong>Auto-Discovery:</strong> The connector automatically queries your LLM server's <code>/v1/models</code> endpoint to discover available models. No need to specify them manually!
+        <strong>Auto-Discovery:</strong> The connector automatically queries your LLM server's <code>/v1/models</code> or <code>/api/tags</code> endpoints to discover available models. No need to specify them manually!
     </div>
 </div>
 
@@ -76,7 +98,7 @@ pip install -e .</pre>
             <tr>
                 <td><code>--llm-url</code></td>
                 <td>URL of your local LLM API (OpenAI-compatible)</td>
-                <td><code>http://localhost:8000</code></td>
+                <td><code>http://localhost:11434</code></td>
             </tr>
             <tr>
                 <td><code>--broker-url</code></td>
@@ -84,9 +106,19 @@ pip install -e .</pre>
                 <td><code>{{ ws_url }}</code></td>
             </tr>
             <tr>
+                <td><code>--connector-name</code></td>
+                <td>Friendly name for your connector (shown in admin)</td>
+                <td><code>"My GPU Server"</code></td>
+            </tr>
+            <tr>
+                <td><code>--credentials-file</code></td>
+                <td>Where to store the approved API key</td>
+                <td><code>~/.remotellm/credentials.yaml</code></td>
+            </tr>
+            <tr>
                 <td><code>--broker-token</code></td>
-                <td>Authentication token</td>
-                <td><code>{{ connector_token[:20] }}...</code></td>
+                <td>Pre-approved API key (optional, auto-obtained)</td>
+                <td><code>ck-abc123...</code></td>
             </tr>
             <tr>
                 <td><code>--model</code></td>
@@ -115,7 +147,7 @@ pip install -e .</pre>
         <pre id="multi-cmd">remotellm-connector \
   --llm-url http://localhost:8000 \
   --broker-url {{ ws_url }} \
-  --broker-token {{ connector_token }} \
+  --connector-name "Custom Models" \
   --model llama-3.1-8b \
   --model llama-3.1-70b</pre>
     </div>
@@ -136,9 +168,11 @@ Type=simple
 User=root
 WorkingDirectory=/opt/remotellm
 ExecStart=/usr/local/bin/remotellm-connector \
-    --llm-url http://localhost:8000 \
+    --llm-url http://localhost:11434 \
     --broker-url {{ ws_url }} \
-    --broker-token {{ connector_token }}
+    --connector-name "My Server" \
+    --credentials-file /root/.remotellm/credentials.yaml \
+    --log-level INFO
 Restart=always
 RestartSec=10
 
@@ -152,6 +186,10 @@ WantedBy=multi-user.target</pre>
         <pre>sudo systemctl daemon-reload
 sudo systemctl enable remotellm-connector
 sudo systemctl start remotellm-connector</pre>
+    </div>
+
+    <div class="alert alert-info" style="margin-top: 15px;">
+        <strong>First Start:</strong> On first run, the service will wait for admin approval. Check <code>journalctl -u remotellm-connector -f</code> for status. Once approved, credentials are saved and the service will reconnect automatically on restart.
     </div>
 </div>
 
@@ -172,7 +210,7 @@ sudo systemctl start remotellm-connector</pre>
             <h3 style="margin-bottom: 10px;">Ollama</h3>
             <div class="code-block" style="font-size: 0.85rem;">
                 <pre># Default endpoint
-http://localhost:11434/v1</pre>
+http://localhost:11434</pre>
             </div>
         </div>
         <div>
@@ -204,12 +242,16 @@ http://localhost:1234/v1</pre>
         </thead>
         <tbody>
             <tr>
+                <td>Stuck in "pending" state</td>
+                <td>Ask an admin to approve your connector at <a href="/admin/connectors">/admin/connectors</a></td>
+            </tr>
+            <tr>
                 <td>Connection refused</td>
                 <td>Check that your LLM server is running and accessible at the specified URL</td>
             </tr>
             <tr>
-                <td>Authentication failed</td>
-                <td>Verify your connector token is correct</td>
+                <td>Authentication failed after approval</td>
+                <td>Check that credentials file exists at <code>~/.remotellm/credentials.yaml</code> with correct permissions</td>
             </tr>
             <tr>
                 <td>WebSocket disconnects</td>
@@ -218,6 +260,10 @@ http://localhost:1234/v1</pre>
             <tr>
                 <td>Model not appearing</td>
                 <td>Ensure the model name matches exactly and the LLM server has the model loaded</td>
+            </tr>
+            <tr>
+                <td>Revoked by admin</td>
+                <td>Your connector was revoked. Credentials are cleared; reconnect to start a new approval request</td>
             </tr>
         </tbody>
     </table>
