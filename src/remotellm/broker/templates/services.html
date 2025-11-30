@@ -40,7 +40,7 @@
                 </td>
                 <td>
                     {% for model in connector.models %}
-                    <span class="model-tag">{{ model }}</span>
+                    <span class="{% if connector.connected %}model-tag-loaded{% else %}model-tag{% endif %}">{{ model }}</span>
                     {% endfor %}
                 </td>
             </tr>
