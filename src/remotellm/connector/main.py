@@ -270,26 +270,68 @@ class Connector:
 
         return name
 
-    async def _discover_models(self) -> list[str]:
-        """Discover available models from the LLM server.
+    async def _discover_models_openai(self) -> list[str]:
+        """Discover models via OpenAI-compatible /v1/models endpoint.
 
         Returns:
-            List of model IDs available on the LLM server
+            List of normalized model names
         """
         try:
             models_data = await self.llm_client.get_models()
             raw_models = [m["id"] for m in models_data.get("data", [])]
             models = [self._normalize_model_name(m) for m in raw_models]
             logger.info(
-                "Discovered models from LLM",
+                "Discovered models via OpenAI API",
                 raw_models=raw_models,
                 normalized_models=models,
                 count=len(models),
             )
             return models
         except Exception as e:
-            logger.warning("Failed to discover models from LLM", error=str(e))
+            logger.debug("OpenAI models endpoint failed", error=str(e))
             return []
+
+    async def _discover_models_ollama(self) -> list[str]:
+        """Discover models via Ollama's /api/tags endpoint.
+
+        Returns:
+            List of model names from Ollama
+        """
+        try:
+            tags_data = await self.llm_client.get_ollama_tags()
+            models = [m["name"] for m in tags_data.get("models", [])]
+            logger.info(
+                "Discovered models via Ollama API",
+                models=models,
+                count=len(models),
+            )
+            return models
+        except Exception as e:
+            logger.debug("Ollama tags endpoint failed", error=str(e))
+            return []
+
+    async def _discover_models(self) -> list[str]:
+        """Discover available models from the LLM server.
+
+        Tries multiple discovery methods:
+        1. Ollama /api/tags (lists all available models)
+        2. OpenAI /v1/models (lists loaded models)
+
+        Returns:
+            List of model IDs available on the LLM server
+        """
+        # Try Ollama first (returns all available models)
+        models = await self._discover_models_ollama()
+        if models:
+            return models
+
+        # Fall back to OpenAI-compatible endpoint
+        models = await self._discover_models_openai()
+        if models:
+            return models
+
+        logger.warning("No models discovered from any endpoint")
+        return []
 
     async def run(self) -> None:
         """Run the connector."""

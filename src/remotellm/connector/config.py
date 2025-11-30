@@ -31,7 +31,7 @@ class ConnectorConfig(BaseSettings):
     # Models served by this connector (T028)
     models: list[str] = Field(
         default_factory=list,
-        description="List of model names served by this connector",
+        description="List of model names served by this connector (overrides auto-discovery)",
     )
 
     # Broker connection
