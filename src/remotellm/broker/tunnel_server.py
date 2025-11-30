@@ -5,9 +5,10 @@ import contextlib
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-import websockets
-from websockets.asyncio.server import Server, ServerConnection
+import aiohttp
+from aiohttp import web
 
 from remotellm.shared.logging import get_logger
 from remotellm.shared.protocol import (
@@ -19,6 +20,9 @@ from remotellm.shared.protocol import (
     create_ping_message,
 )
 
+if TYPE_CHECKING:
+    pass
+
 logger = get_logger(__name__)
 
 
@@ -27,7 +31,7 @@ class ConnectorRegistration:
     """Registered connector connection."""
 
     connector_id: str
-    websocket: ServerConnection
+    websocket: web.WebSocketResponse
     connected_at: float
     models: list[str] = field(default_factory=list)
     llm_api_key: str | None = None
@@ -35,7 +39,12 @@ class ConnectorRegistration:
 
 
 class TunnelServer:
-    """WebSocket server for connector tunnel connections."""
+    """WebSocket server for connector tunnel connections.
+
+    Can operate in two modes:
+    1. Integrated mode: WebSocket handler at /ws path on main HTTP server
+    2. Standalone mode: Separate WebSocket server on its own port (legacy)
+    """
 
     def __init__(
         self,
@@ -51,8 +60,8 @@ class TunnelServer:
         """Initialize the tunnel server.
 
         Args:
-            host: Host to bind to
-            port: Port to bind to
+            host: Host to bind to (for standalone mode)
+            port: Port to bind to (for standalone mode)
             connector_tokens: Valid authentication tokens for connectors
             connector_configs: Mapping of token → llm_api_key for connectors
             auth_timeout: Timeout for connector authentication
@@ -70,7 +79,6 @@ class TunnelServer:
         self.on_connector_disconnected = on_connector_disconnected
 
         self._connectors: dict[str, ConnectorRegistration] = {}
-        self._server: Server | None = None
         self._running = False
 
     @property
@@ -119,7 +127,7 @@ class TunnelServer:
 
         try:
             # Send the request
-            await connector.websocket.send(message.model_dump_json())
+            await connector.websocket.send_str(message.model_dump_json())
             logger.debug(
                 "Sent request to connector", connector_id=connector_id, correlation_id=message.id
             )
@@ -155,7 +163,7 @@ class TunnelServer:
         connector.pending_requests[message.id] = response_queue  # type: ignore
 
         # Send the request
-        await connector.websocket.send(message.model_dump_json())
+        await connector.websocket.send_str(message.model_dump_json())
         logger.debug(
             "Sent streaming request to connector",
             connector_id=connector_id,
@@ -164,25 +172,51 @@ class TunnelServer:
 
         return response_queue
 
+    def setup_routes(self, app: web.Application) -> None:
+        """Set up WebSocket route on an aiohttp application.
+
+        This integrates the tunnel server with the main HTTP server.
+
+        Args:
+            app: The aiohttp application to add the /ws route to
+        """
+        app.router.add_get("/ws", self._handle_websocket_request)
+        logger.info("WebSocket tunnel route registered at /ws")
+
     async def start(self) -> None:
-        """Start the tunnel server."""
+        """Mark the tunnel server as running.
+
+        For integrated mode, routes should be set up via setup_routes().
+        """
         self._running = True
-        self._server = await websockets.serve(
-            self._handle_connection,
-            self.host,
-            self.port,
-        )
-        logger.info("Tunnel server started", host=self.host, port=self.port)
+        logger.info("Tunnel server started (integrated mode)")
 
     async def stop(self) -> None:
         """Stop the tunnel server."""
         self._running = False
-        if self._server:
-            self._server.close()
-            await self._server.wait_closed()
+        # Close all connected websockets
+        for connector_id, connector in list(self._connectors.items()):
+            try:
+                await connector.websocket.close()
+            except Exception:
+                pass
         logger.info("Tunnel server stopped")
 
-    async def _handle_connection(self, websocket: ServerConnection) -> None:
+    async def _handle_websocket_request(self, request: web.Request) -> web.WebSocketResponse:
+        """Handle incoming WebSocket connection request (aiohttp handler).
+
+        Args:
+            request: The aiohttp request
+
+        Returns:
+            WebSocket response
+        """
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        await self._handle_connection(ws)
+        return ws
+
+    async def _handle_connection(self, websocket: web.WebSocketResponse) -> None:
         """Handle a new WebSocket connection.
 
         Args:
@@ -226,8 +260,6 @@ class TunnelServer:
                 with contextlib.suppress(asyncio.CancelledError):
                     await ping_task
 
-        except websockets.ConnectionClosed as e:
-            logger.info("Connector disconnected", connector_id=connector_id, code=e.code)
         except Exception as e:
             logger.error("Connection error", connector_id=connector_id, error=str(e))
         finally:
@@ -247,7 +279,7 @@ class TunnelServer:
                     self.on_connector_disconnected(connector_id)
 
     async def _authenticate(
-        self, websocket: ServerConnection
+        self, websocket: web.WebSocketResponse
     ) -> tuple[str, list[str], str | None] | None:
         """Authenticate a connector connection.
 
@@ -259,13 +291,22 @@ class TunnelServer:
         """
         try:
             # Wait for AUTH message
-            raw_message = await asyncio.wait_for(websocket.recv(), timeout=self.auth_timeout)
+            msg = await asyncio.wait_for(websocket.receive(), timeout=self.auth_timeout)
+            if msg.type == aiohttp.WSMsgType.TEXT:
+                raw_message = msg.data
+            elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.ERROR):
+                logger.warning("WebSocket closed during auth")
+                return None
+            else:
+                logger.warning("Unexpected message type during auth", type=msg.type)
+                return None
+
             message = TunnelMessage.model_validate_json(raw_message)
 
             if message.type != MessageType.AUTH:
                 logger.warning("Expected AUTH message", received=message.type)
                 fail_msg = create_auth_fail_message(message.id, "Expected AUTH message")
-                await websocket.send(fail_msg.model_dump_json())
+                await websocket.send_str(fail_msg.model_dump_json())
                 await websocket.close()
                 return None
 
@@ -275,7 +316,7 @@ class TunnelServer:
             if self.connector_tokens and payload.token not in self.connector_tokens:
                 logger.warning("Invalid connector token")
                 fail_msg = create_auth_fail_message(message.id, "Invalid token")
-                await websocket.send(fail_msg.model_dump_json())
+                await websocket.send_str(fail_msg.model_dump_json())
                 await websocket.close()
                 return None
 
@@ -288,7 +329,7 @@ class TunnelServer:
             # Generate connector ID and send AUTH_OK
             connector_id = f"conn-{uuid.uuid4().hex[:8]}"
             ok_msg = create_auth_ok_message(message.id, connector_id)
-            await websocket.send(ok_msg.model_dump_json())
+            await websocket.send_str(ok_msg.model_dump_json())
 
             logger.info(
                 "Connector authenticated",
@@ -307,19 +348,26 @@ class TunnelServer:
             await websocket.close()
             return None
 
-    async def _message_loop(self, connector_id: str, websocket: ServerConnection) -> None:
+    async def _message_loop(self, connector_id: str, websocket: web.WebSocketResponse) -> None:
         """Handle incoming messages from a connector.
 
         Args:
             connector_id: The connector ID
             websocket: The WebSocket connection
         """
-        async for raw_message in websocket:
-            try:
-                message = TunnelMessage.model_validate_json(raw_message)
-                await self._handle_message(connector_id, message)
-            except Exception as e:
-                logger.error("Failed to process message", connector_id=connector_id, error=str(e))
+        async for msg in websocket:
+            if msg.type == aiohttp.WSMsgType.TEXT:
+                try:
+                    message = TunnelMessage.model_validate_json(msg.data)
+                    await self._handle_message(connector_id, message)
+                except Exception as e:
+                    logger.error("Failed to process message", connector_id=connector_id, error=str(e))
+            elif msg.type == aiohttp.WSMsgType.ERROR:
+                logger.warning("WebSocket error", connector_id=connector_id, error=websocket.exception())
+                break
+            elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED):
+                logger.info("Connector disconnected", connector_id=connector_id)
+                break
 
     async def _handle_message(self, connector_id: str, message: TunnelMessage) -> None:
         """Handle a message from a connector.
@@ -377,7 +425,7 @@ class TunnelServer:
 
             try:
                 ping_msg = create_ping_message(f"ping-{uuid.uuid4().hex[:8]}")
-                await connector.websocket.send(ping_msg.model_dump_json())
+                await connector.websocket.send_str(ping_msg.model_dump_json())
                 logger.debug("Sent PING", connector_id=connector_id)
             except Exception as e:
                 logger.warning("Failed to send ping", connector_id=connector_id, error=str(e))

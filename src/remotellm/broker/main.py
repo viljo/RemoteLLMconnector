@@ -49,7 +49,7 @@ class Broker:
 
         self.tunnel_server = TunnelServer(
             host=config.host,
-            port=config.port + 1,  # WebSocket on port+1
+            port=config.port,  # Same port, /ws path
             connector_tokens=config.connector_tokens,
             connector_configs=connector_configs,
             auth_timeout=config.auth_timeout,
@@ -190,8 +190,7 @@ class Broker:
         logger.info(
             "Starting broker",
             host=self.config.host,
-            api_port=self.config.port,
-            tunnel_port=self.config.port + 1,
+            port=self.config.port,
         )
 
         # Set up signal handlers
@@ -199,7 +198,8 @@ class Broker:
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, lambda: asyncio.create_task(self.shutdown()))
 
-        # Start tunnel server
+        # Set up WebSocket tunnel route on main HTTP server
+        self.tunnel_server.setup_routes(self.api.app)
         await self.tunnel_server.start()
 
         # Start health server
