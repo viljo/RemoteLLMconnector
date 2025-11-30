@@ -41,7 +41,7 @@ from remotellm.connector.main import run_connector
     "models",
     envvar="REMOTELLM_MODELS",
     multiple=True,
-    help="Model names served by this connector (can be specified multiple times)",
+    help="Override model names (optional, auto-discovered from LLM if not specified)",
 )
 @click.option(
     "--broker-url",

@@ -54,13 +54,11 @@ pip install -e .</pre>
         <pre id="run-cmd">remotellm-connector \
   --llm-url http://localhost:8000 \
   --broker-url {{ ws_url }} \
-  --broker-token {{ connector_token }} \
-  --model your-model-name \
-  --log-level INFO</pre>
+  --broker-token {{ connector_token }}</pre>
     </div>
 
-    <div class="alert alert-info" style="margin-top: 15px;">
-        <strong>Tip:</strong> Replace <code>http://localhost:8000</code> with your LLM server URL and <code>your-model-name</code> with the model identifier you want to expose.
+    <div class="alert alert-success" style="margin-top: 15px;">
+        <strong>Auto-Discovery:</strong> The connector automatically queries your LLM server's <code>/v1/models</code> endpoint to discover available models. No need to specify them manually!
     </div>
 </div>
 
@@ -92,7 +90,7 @@ pip install -e .</pre>
             </tr>
             <tr>
                 <td><code>--model</code></td>
-                <td>Model name to expose (can repeat for multiple)</td>
+                <td>Override model names (optional, auto-discovered)</td>
                 <td><code>llama-3.1-70b</code></td>
             </tr>
             <tr>
@@ -110,8 +108,8 @@ pip install -e .</pre>
 </div>
 
 <div class="card">
-    <h2>4. Multiple Models</h2>
-    <p style="margin-bottom: 15px;">Expose multiple models from a single connector:</p>
+    <h2>4. Override Models (Optional)</h2>
+    <p style="margin-bottom: 15px;">If auto-discovery doesn't work or you want to expose specific models, you can override:</p>
     <div class="code-block">
         <button class="copy-btn" onclick="copyToClipboard(document.getElementById('multi-cmd').textContent, this)">Copy</button>
         <pre id="multi-cmd">remotellm-connector \
@@ -119,9 +117,9 @@ pip install -e .</pre>
   --broker-url {{ ws_url }} \
   --broker-token {{ connector_token }} \
   --model llama-3.1-8b \
-  --model llama-3.1-70b \
-  --model codellama-34b</pre>
+  --model llama-3.1-70b</pre>
     </div>
+    <p style="margin-top: 10px; color: #666;">Note: If <code>--model</code> is specified, auto-discovery is disabled and only listed models are exposed.</p>
 </div>
 
 <div class="card">
@@ -140,9 +138,7 @@ WorkingDirectory=/opt/remotellm
 ExecStart=/usr/local/bin/remotellm-connector \
     --llm-url http://localhost:8000 \
     --broker-url {{ ws_url }} \
-    --broker-token {{ connector_token }} \
-    --model your-model-name \
-    --log-level INFO
+    --broker-token {{ connector_token }}
 Restart=always
 RestartSec=10
 

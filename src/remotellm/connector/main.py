@@ -240,6 +240,21 @@ class Connector:
             )
             await self.tunnel_client.send_message(error_msg)
 
+    async def _discover_models(self) -> list[str]:
+        """Discover available models from the LLM server.
+
+        Returns:
+            List of model IDs available on the LLM server
+        """
+        try:
+            models_data = await self.llm_client.get_models()
+            models = [m["id"] for m in models_data.get("data", [])]
+            logger.info("Discovered models from LLM", models=models, count=len(models))
+            return models
+        except Exception as e:
+            logger.warning("Failed to discover models from LLM", error=str(e))
+            return []
+
     async def run(self) -> None:
         """Run the connector."""
         configure_logging(self.config.log_level)
@@ -247,12 +262,21 @@ class Connector:
             "Starting connector", llm_url=self.config.llm_url, broker_url=self.config.broker_url
         )
 
+        # Discover models from LLM server (use config.models as override if specified)
+        if self.config.models:
+            models = self.config.models
+            logger.info("Using configured models", models=models)
+        else:
+            models = await self._discover_models()
+            if not models:
+                logger.warning("No models discovered, connector will still connect")
+
         # Create tunnel client with models list
         self.tunnel_client = TunnelClient(
             broker_url=self.config.broker_url,
             broker_token=self.config.broker_token,
             request_handler=self._handle_request,
-            models=self.config.models,
+            models=models,
             reconnect_base_delay=self.config.reconnect_base_delay,
             reconnect_max_delay=self.config.reconnect_max_delay,
         )
