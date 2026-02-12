@@ -131,14 +131,17 @@ class RelayClient:
             logger.warning("Failed to load credentials", path=str(creds_path), error=str(e))
             return None
 
-    def _save_credentials(self, api_key: str) -> None:
+    def _save_credentials(self, api_key: str) -> bool:
         """Save broker token to credentials file.
 
         Args:
             api_key: The API key to save
+
+        Returns:
+            True if saved successfully, False otherwise
         """
         if not self.credentials_file:
-            return
+            return False
 
         creds_path = Path(self.credentials_file).expanduser()
         try:
@@ -146,8 +149,10 @@ class RelayClient:
             with open(creds_path, "w") as f:
                 yaml.dump({"broker_token": api_key}, f)
             logger.info("Saved broker token to credentials file", path=str(creds_path))
+            return True
         except Exception as e:
             logger.error("Failed to save credentials", path=str(creds_path), error=str(e))
+            return False
 
     def _clear_credentials(self) -> None:
         """Clear saved broker token."""
@@ -343,7 +348,7 @@ class RelayClient:
         )
 
         # Save the API key to credentials file
-        self._save_credentials(payload.api_key)
+        credentials_saved = self._save_credentials(payload.api_key)
 
         # Update our token for future connections
         self.broker_token = payload.api_key
@@ -351,8 +356,16 @@ class RelayClient:
         logger.info(
             "Reconnecting with new API key to complete registration",
             connector_id=self._connector_id,
-            credentials_saved=self.credentials_file is not None,
+            credentials_saved=credentials_saved,
         )
+
+        if not credentials_saved and self.credentials_file:
+            logger.warning(
+                "Credentials were NOT saved - connector will require approval again after restart. "
+                "Check file permissions on the credentials directory.",
+                credentials_file=str(self.credentials_file),
+                connector_id=self._connector_id,
+            )
 
         # Trigger reconnection to properly register with models
         # The pending connection doesn't have models registered with the router,
