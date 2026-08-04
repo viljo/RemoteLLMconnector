@@ -359,6 +359,8 @@ class Connector:
             credentials_file=self.config.credentials_file,
             reconnect_base_delay=self.config.reconnect_base_delay,
             reconnect_max_delay=self.config.reconnect_max_delay,
+            keepalive_interval=self.config.keepalive_interval,
+            keepalive_timeout=self.config.keepalive_timeout,
         )
 
         # Start health server if configured
