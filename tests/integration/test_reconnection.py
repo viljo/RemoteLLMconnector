@@ -12,6 +12,7 @@ Tests comprehensive reconnection scenarios including:
 
 import asyncio
 import tempfile
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -307,35 +308,36 @@ class TestReconnectAttemptCounter:
 
 
 class TestKeepaliveDetection:
-    """Tests for keepalive ping detection of dead connections."""
+    """Tests for the liveness watchdog detection of dead connections."""
 
-    async def test_keepalive_task_starts_and_stops(self, mock_broker, request_handler):
-        """Test that keepalive task properly starts and stops."""
+    async def test_watchdog_task_starts_and_stops(self, mock_broker, request_handler):
+        """Test that the liveness watchdog task properly starts and stops."""
         client = RelayClient(
             broker_url=mock_broker.get_url(),
             broker_token="test-token",
             request_handler=request_handler,
-            keepalive_interval=1.0,  # Long interval for stability
+            inbound_timeout=10.0,  # Long timeout for stability
         )
 
         # Connect
         await client.connect()
         assert client.state == ConnectionState.CONNECTED
 
-        # Start keepalive
+        # Start watchdog
         client._running = True
-        client._start_keepalive()
+        client._last_inbound = time.monotonic()
+        client._start_watchdog()
 
         # Verify task is running
-        assert client._keepalive_task is not None
-        assert not client._keepalive_task.done()
+        assert client._watchdog_task is not None
+        assert not client._watchdog_task.done()
 
-        # Stop keepalive
-        client._stop_keepalive()
+        # Stop watchdog
+        client._stop_watchdog()
         await asyncio.sleep(0.05)  # Give time for cancellation
 
         # Verify task is stopped
-        assert client._keepalive_task.done() or client._keepalive_task.cancelled()
+        assert client._watchdog_task.done() or client._watchdog_task.cancelled()
 
         await client.stop()
 
@@ -594,43 +596,44 @@ class TestConcurrentReconnection:
 
 
 class TestKeepaliveStopRestart:
-    """Tests for keepalive task management during reconnection."""
+    """Tests for liveness watchdog task management during reconnection."""
 
-    async def test_keepalive_stops_and_restarts(self, mock_broker, request_handler):
-        """Test that keepalive properly stops and restarts."""
+    async def test_watchdog_stops_and_restarts(self, mock_broker, request_handler):
+        """Test that the watchdog properly stops and restarts."""
         client = RelayClient(
             broker_url=mock_broker.get_url(),
             broker_token="test-token",
             request_handler=request_handler,
-            keepalive_interval=1.0,  # Long interval for stability
+            inbound_timeout=10.0,  # Long timeout for stability
         )
 
-        # Connect and start keepalive
+        # Connect and start watchdog
         await client.connect()
         client._running = True
-        client._start_keepalive()
+        client._last_inbound = time.monotonic()
+        client._start_watchdog()
 
-        assert client._keepalive_task is not None
-        assert not client._keepalive_task.done()
-        keepalive_task1 = client._keepalive_task
+        assert client._watchdog_task is not None
+        assert not client._watchdog_task.done()
+        watchdog_task1 = client._watchdog_task
 
-        # Stop keepalive (simulating disconnect)
-        client._stop_keepalive()
+        # Stop watchdog (simulating disconnect)
+        client._stop_watchdog()
         await asyncio.sleep(0.05)
 
-        assert keepalive_task1.done() or keepalive_task1.cancelled()
+        assert watchdog_task1.done() or watchdog_task1.cancelled()
 
-        # Restart keepalive (simulating reconnect)
-        client._start_keepalive()
+        # Restart watchdog (simulating reconnect)
+        client._start_watchdog()
 
-        assert client._keepalive_task is not None
-        assert not client._keepalive_task.done()
+        assert client._watchdog_task is not None
+        assert not client._watchdog_task.done()
         # Should be a new task
-        assert client._keepalive_task != keepalive_task1
+        assert client._watchdog_task != watchdog_task1
 
         # Cleanup
         client._running = False
-        client._stop_keepalive()
+        client._stop_watchdog()
         await client.stop()
 
 

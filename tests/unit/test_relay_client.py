@@ -2,6 +2,7 @@
 
 import asyncio
 import tempfile
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -75,12 +76,12 @@ class TestRelayClientInit:
             request_handler=handler,
             reconnect_base_delay=2.0,
             reconnect_max_delay=600.0,
-            keepalive_interval=30.0,
+            inbound_timeout=45.0,
         )
 
         assert client.reconnect_base_delay == 2.0
         assert client.reconnect_max_delay == 600.0
-        assert client.keepalive_interval == 30.0
+        assert client.inbound_timeout == 45.0
 
     def test_init_loads_credentials(self):
         """Test that initialization loads credentials from file."""
@@ -499,71 +500,143 @@ class TestRelayClientSendMessage:
         client._ws.send.assert_called_once()
 
 
-class TestRelayClientKeepalive:
-    """Tests for keepalive functionality."""
+class TestRelayClientLivenessWatchdog:
+    """Tests for the inbound-activity liveness watchdog.
 
-    async def test_start_keepalive(self):
-        """Test starting keepalive task."""
+    The broker is the ping initiator; the connector must NOT send its own pings
+    and wait for pongs (the broker never answers connector-sent pings). Instead
+    it forces a reconnect when NO inbound broker traffic arrives within
+    inbound_timeout.
+    """
+
+    def _client(self, **kw):
         handler = AsyncMock()
-        client = RelayClient(
+        return RelayClient(
             broker_url="ws://localhost:8444",
             broker_token="test-token",
             request_handler=handler,
-            keepalive_interval=0.1,  # Short for testing
+            **kw,
         )
+
+    async def test_start_stop_watchdog(self):
+        """Watchdog task starts and can be cancelled."""
+        client = self._client(inbound_timeout=5.0)
         client._state = ConnectionState.CONNECTED
         client._ws = AsyncMock()
         client._running = True
+        client._last_inbound = time.monotonic()
 
-        client._start_keepalive()
+        client._start_watchdog()
+        assert client._watchdog_task is not None
+        task = client._watchdog_task
+        assert not task.done()
 
-        assert client._keepalive_task is not None
-        assert not client._keepalive_task.done()
-
-        # Stop it
-        client._stop_keepalive()
-        await asyncio.sleep(0.05)
-
-    async def test_stop_keepalive(self):
-        """Test stopping keepalive task."""
-        handler = AsyncMock()
-        client = RelayClient(
-            broker_url="ws://localhost:8444",
-            broker_token="test-token",
-            request_handler=handler,
-        )
-        client._state = ConnectionState.CONNECTED
-        client._ws = AsyncMock()
-        client._running = True
-
-        client._start_keepalive()
-        task = client._keepalive_task
-
-        client._stop_keepalive()
-        await asyncio.sleep(0.05)
-
+        client._stop_watchdog()
+        await asyncio.sleep(0.02)
         assert task.cancelled() or task.done()
 
-    async def test_keepalive_sends_pings(self):
-        """Test that keepalive sends ping messages."""
-        handler = AsyncMock()
-        client = RelayClient(
-            broker_url="ws://localhost:8444",
-            broker_token="test-token",
-            request_handler=handler,
-            keepalive_interval=0.05,  # Very short for testing
-        )
+    async def test_watchdog_never_sends_pings(self):
+        """Regression guard: the watchdog must not transmit anything itself.
+
+        The previous (broken) implementation sent connector-initiated pings and
+        waited for a pong the broker never sends, causing a reconnect every
+        ~90s. The watchdog is now purely passive.
+        """
+        client = self._client(inbound_timeout=0.2)
         client._state = ConnectionState.CONNECTED
         client._ws = AsyncMock()
         client._running = True
+        client._last_inbound = time.monotonic()
 
-        client._start_keepalive()
-        await asyncio.sleep(0.15)  # Wait for a few pings
+        client._start_watchdog()
+        await asyncio.sleep(0.1)  # within timeout, fresh activity
         client._running = False
-        client._stop_keepalive()
+        client._stop_watchdog()
 
-        # Should have sent at least one ping
-        assert client._ws.send.call_count >= 1
+        client._ws.send.assert_not_called()
+
+    async def test_watchdog_forces_reconnect_when_idle(self):
+        """No inbound traffic beyond inbound_timeout => force disconnect."""
+        client = self._client(inbound_timeout=0.15)
+        client._state = ConnectionState.CONNECTED
+        mock_ws = AsyncMock()
+        client._ws = mock_ws
+        client._running = True
+        # Last inbound well in the past -> immediately stale.
+        client._last_inbound = time.monotonic() - 10.0
+
+        client._start_watchdog()
+        await asyncio.sleep(0.3)  # at least one check cycle
+
+        assert client.state == ConnectionState.DISCONNECTED
+        assert client._ws is None
+        mock_ws.close.assert_awaited()
+
+        client._running = False
+        client._stop_watchdog()
+
+    async def test_watchdog_stays_alive_with_inbound_activity(self):
+        """While inbound messages keep arriving, the connection is held open."""
+        client = self._client(inbound_timeout=0.2)
+        client._state = ConnectionState.CONNECTED
+        client._ws = AsyncMock()
+        client._running = True
+        client._last_inbound = time.monotonic()
+
+        async def keep_fresh():
+            for _ in range(20):
+                await asyncio.sleep(0.02)
+                client._last_inbound = time.monotonic()
+
+        fresh_task = asyncio.create_task(keep_fresh())
+        client._start_watchdog()
+        await asyncio.sleep(0.25)
+
+        assert client.state == ConnectionState.CONNECTED
+        assert client._ws is not None
+
+        client._running = False
+        client._stop_watchdog()
+        fresh_task.cancel()
+
+    async def test_watchdog_inactive_while_pending_approval(self):
+        """The broker does not ping PENDING connectors, so the watchdog must
+        not force a reconnect while awaiting admin approval, even when idle."""
+        client = self._client(inbound_timeout=0.15)
+        client._state = ConnectionState.PENDING
+        mock_ws = AsyncMock()
+        client._ws = mock_ws
+        client._running = True
+        client._last_inbound = time.monotonic() - 10.0  # very stale
+
+        client._start_watchdog()
+        await asyncio.sleep(0.3)
+
+        # Still pending, socket untouched — no false reconnect.
+        assert client.state == ConnectionState.PENDING
+        assert client._ws is mock_ws
+        mock_ws.close.assert_not_called()
+
+        client._running = False
+        client._stop_watchdog()
+
+    async def test_message_loop_refreshes_last_inbound(self):
+        """Receiving a broker message updates the liveness clock."""
+        client = self._client(inbound_timeout=90.0)
+        ping = RelayMessage(type=MessageType.PING, id="ping-xyz")
+
+        async def one_message():
+            yield ping.model_dump_json()
+
+        client._ws = one_message()
+        client._running = True
+        client._last_inbound = None
+        # send_message is used to answer the PING with a PONG
+        client.send_message = AsyncMock()
+
+        await client._message_loop()
+
+        assert client._last_inbound is not None
 
 
 class TestRelayClientReconnect:
@@ -621,7 +694,7 @@ class TestRelayClientStop:
         client._state = ConnectionState.CONNECTED
         client._ws = AsyncMock()
         client._running = True
-        client._start_keepalive()
+        client._start_watchdog()
 
         await client.stop()
 

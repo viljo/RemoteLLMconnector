@@ -1,6 +1,7 @@
 """WebSocket relay client for connecting to the broker."""
 
 import asyncio
+import time
 import uuid
 from collections.abc import Callable, Coroutine
 from enum import Enum
@@ -19,7 +20,6 @@ from remotellm.shared.protocol import (
     RevokedPayload,
     RelayMessage,
     create_auth_message,
-    create_ping_message,
     create_pong_message,
 )
 
@@ -54,7 +54,7 @@ class RelayClient:
         credentials_file: Path | None = None,
         reconnect_base_delay: float = 1.0,
         reconnect_max_delay: float = 300.0,
-        keepalive_interval: float = 60.0,
+        inbound_timeout: float = 90.0,
     ):
         """Initialize the relay client.
 
@@ -67,7 +67,12 @@ class RelayClient:
             credentials_file: Path to store approved API key (for approval workflow)
             reconnect_base_delay: Base delay for exponential backoff (default 1s)
             reconnect_max_delay: Maximum delay between reconnection attempts (default 5min)
-            keepalive_interval: Interval in seconds between keepalive pings (default 60s)
+            inbound_timeout: Seconds with NO message received from the broker before the
+                connection is treated as half-open and a reconnect is forced (default 90s).
+                The broker pings connectors on its own interval (30s by default), so this
+                must be comfortably larger than that interval. This detects the Cloudflare
+                half-open case where the proxy answers protocol-level pings while the broker
+                app is gone — the broker's application-level PINGs simply stop arriving.
         """
         self.broker_url = broker_url
         self.broker_token = broker_token
@@ -77,7 +82,7 @@ class RelayClient:
         self.credentials_file = credentials_file
         self.reconnect_base_delay = reconnect_base_delay
         self.reconnect_max_delay = reconnect_max_delay
-        self.keepalive_interval = keepalive_interval
+        self.inbound_timeout = inbound_timeout
 
         self._state = ConnectionState.DISCONNECTED
         self._ws: ClientConnection | None = None
@@ -86,7 +91,12 @@ class RelayClient:
         self._reconnect_attempt = 0
         self._running = False
         self._send_lock = asyncio.Lock()
-        self._keepalive_task: asyncio.Task | None = None
+        self._watchdog_task: asyncio.Task | None = None
+        # Monotonic timestamp of the last message received from the broker. The
+        # liveness watchdog compares against this; any inbound message (the
+        # broker's periodic PING, a request, etc.) counts as the connection
+        # being alive. None until the first connection is established.
+        self._last_inbound: float | None = None
 
         # Try to load token from credentials file if not provided
         if self.broker_token is None and self.credentials_file:
@@ -275,20 +285,30 @@ class RelayClient:
                 if not success:
                     await self._handle_reconnect()
                     continue
-                # Start keepalive after successful connection
-                self._start_keepalive()
+                # Seed liveness clock and start the inbound-activity watchdog
+                self._last_inbound = time.monotonic()
+                self._start_watchdog()
 
             try:
                 # Listen for messages
                 await self._message_loop()
+                # Message loop returned without raising: the socket was closed
+                # locally (watchdog forced a reconnect, or approval/revocation
+                # handling set state to DISCONNECTED). Stop the old watchdog and
+                # reconnect unless we are already headed there.
+                self._stop_watchdog()
+                if self._running and self._state != ConnectionState.DISCONNECTED:
+                    logger.warning("Message loop ended unexpectedly; reconnecting")
+                    self._ws = None
+                    await self._handle_reconnect()
             except websockets.ConnectionClosed as e:
                 logger.warning("Connection closed", code=e.code, reason=e.reason)
-                self._stop_keepalive()
+                self._stop_watchdog()
                 self._ws = None  # Clear old connection
                 await self._handle_reconnect()
             except Exception as e:
                 logger.error("Message loop error", error=str(e))
-                self._stop_keepalive()
+                self._stop_watchdog()
                 self._ws = None  # Clear old connection
                 await self._handle_reconnect()
 
@@ -300,6 +320,10 @@ class RelayClient:
         async for raw_message in self._ws:
             if not self._running:
                 break
+
+            # Any message from the broker proves the application-level link is
+            # alive; refresh the liveness clock before processing.
+            self._last_inbound = time.monotonic()
 
             try:
                 message = RelayMessage.model_validate_json(raw_message)
@@ -321,8 +345,9 @@ class RelayClient:
             pong = create_pong_message(message.id)
             await self.send_message(pong)
         elif message.type == MessageType.PONG:
-            # Response to our keepalive ping
-            logger.debug("Received keepalive pong", correlation_id=message.id)
+            # The broker is ping-initiator, so we don't normally receive PONGs;
+            # tolerate them (they still counted as inbound activity above).
+            logger.debug("Received PONG", correlation_id=message.id)
         elif message.type == MessageType.CANCEL:
             # TODO: Implement request cancellation
             logger.info("Received cancel request", correlation_id=message.id)
@@ -403,33 +428,74 @@ class RelayClient:
             self._state = ConnectionState.DISCONNECTED
             await ws.close()
 
-    async def _keepalive_loop(self) -> None:
-        """Send periodic keepalive pings to maintain connection."""
-        # Run keepalive in both CONNECTED and PENDING states
-        active_states = (ConnectionState.CONNECTED, ConnectionState.PENDING)
+    async def _liveness_loop(self) -> None:
+        """Force a reconnect if the broker stops sending us any messages.
+
+        The broker is the ping initiator (it PINGs connectors on its own
+        interval, default 30s, and we answer PONG). So rather than sending our
+        own pings and waiting for a reply the broker never sends, we watch for
+        the *absence* of inbound traffic: if nothing has arrived from the broker
+        within ``inbound_timeout``, the application-level link is dead — even if
+        an intermediary (e.g. Cloudflare) is still answering protocol-level
+        pings on the broker's behalf — and we tear the socket down to reconnect.
+
+        Only runs in CONNECTED state: the broker does NOT ping connectors that
+        are PENDING admin approval (its ping loop starts only after approval),
+        so applying the inbound timeout there would force a needless reconnect
+        every timeout while legitimately waiting for approval.
+        """
+        active_states = (ConnectionState.CONNECTED,)
+        # Check several times per timeout window so detection latency is a
+        # fraction of inbound_timeout rather than a full extra interval.
+        check_interval = max(min(self.inbound_timeout / 3.0, 30.0), 0.1)
         while self._running and self._state in active_states:
             try:
-                await asyncio.sleep(self.keepalive_interval)
-                if self._state in active_states:
-                    ping_id = f"ping-{uuid.uuid4().hex[:8]}"
-                    ping_msg = create_ping_message(ping_id)
-                    await self.send_message(ping_msg)
-                    logger.debug("Sent keepalive ping", correlation_id=ping_id)
+                await asyncio.sleep(check_interval)
+                if self._state not in active_states or self._last_inbound is None:
+                    continue
+                idle = time.monotonic() - self._last_inbound
+                if idle > self.inbound_timeout:
+                    logger.warning(
+                        "No inbound broker traffic within timeout - connection is "
+                        "half-open, forcing reconnect",
+                        idle=f"{idle:.0f}s",
+                        timeout=f"{self.inbound_timeout:.0f}s",
+                    )
+                    await self._force_disconnect()
+                    break
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.warning("Keepalive ping failed", error=str(e))
+                logger.warning("Liveness watchdog error", error=str(e))
+                await self._force_disconnect()
                 break
 
-    def _start_keepalive(self) -> None:
-        """Start the keepalive task."""
-        if self._keepalive_task is None or self._keepalive_task.done():
-            self._keepalive_task = asyncio.create_task(self._keepalive_loop())
+    async def _force_disconnect(self) -> None:
+        """Tear down a dead/half-open socket so run() will reconnect.
 
-    def _stop_keepalive(self) -> None:
-        """Stop the keepalive task."""
-        if self._keepalive_task and not self._keepalive_task.done():
-            self._keepalive_task.cancel()
+        Mirrors the close pattern used after approval/revocation: clear the
+        socket and set state to DISCONNECTED so the run() loop establishes a
+        fresh session. Called from within the watchdog task, which returns on
+        its own afterwards.
+        """
+        self._state = ConnectionState.DISCONNECTED
+        if self._ws:
+            ws = self._ws
+            self._ws = None  # Clear before closing to avoid stale reference
+            try:
+                await ws.close(code=1000, reason="liveness timeout")
+            except Exception:
+                pass  # Connection may already be dead
+
+    def _start_watchdog(self) -> None:
+        """Start the liveness watchdog task."""
+        if self._watchdog_task is None or self._watchdog_task.done():
+            self._watchdog_task = asyncio.create_task(self._liveness_loop())
+
+    def _stop_watchdog(self) -> None:
+        """Stop the liveness watchdog task."""
+        if self._watchdog_task and not self._watchdog_task.done():
+            self._watchdog_task.cancel()
 
     async def _handle_reconnect(self) -> None:
         """Handle reconnection with exponential backoff.
@@ -468,7 +534,7 @@ class RelayClient:
     async def stop(self) -> None:
         """Stop the relay client."""
         self._running = False
-        self._stop_keepalive()
+        self._stop_watchdog()
         if self._ws:
             try:
                 await self._ws.close()
