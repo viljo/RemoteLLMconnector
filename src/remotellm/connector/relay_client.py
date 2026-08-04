@@ -55,7 +55,6 @@ class RelayClient:
         reconnect_base_delay: float = 1.0,
         reconnect_max_delay: float = 300.0,
         keepalive_interval: float = 60.0,
-        keepalive_timeout: float = 30.0,
     ):
         """Initialize the relay client.
 
@@ -69,8 +68,6 @@ class RelayClient:
             reconnect_base_delay: Base delay for exponential backoff (default 1s)
             reconnect_max_delay: Maximum delay between reconnection attempts (default 5min)
             keepalive_interval: Interval in seconds between keepalive pings (default 60s)
-            keepalive_timeout: Seconds to wait for the matching pong before treating
-                the connection as half-open and forcing a reconnect (default 30s)
         """
         self.broker_url = broker_url
         self.broker_token = broker_token
@@ -81,7 +78,6 @@ class RelayClient:
         self.reconnect_base_delay = reconnect_base_delay
         self.reconnect_max_delay = reconnect_max_delay
         self.keepalive_interval = keepalive_interval
-        self.keepalive_timeout = keepalive_timeout
 
         self._state = ConnectionState.DISCONNECTED
         self._ws: ClientConnection | None = None
@@ -91,11 +87,6 @@ class RelayClient:
         self._running = False
         self._send_lock = asyncio.Lock()
         self._keepalive_task: asyncio.Task | None = None
-        # Set whenever a PONG is received; the keepalive loop waits on this to
-        # confirm the broker is still answering. An unanswered ping means the
-        # socket is half-open (e.g. silently dropped by Cloudflare) and we must
-        # tear it down rather than sit on a dead connection forever.
-        self._pong_event = asyncio.Event()
 
         # Try to load token from credentials file if not provided
         if self.broker_token is None and self.credentials_file:
@@ -290,17 +281,6 @@ class RelayClient:
             try:
                 # Listen for messages
                 await self._message_loop()
-                # Message loop returned without raising: the socket was closed
-                # locally (keepalive watchdog forced a reconnect, or
-                # approval/revocation handling). Stop the old keepalive task so
-                # the next connection starts a fresh one. State was already set
-                # to DISCONNECTED by the closer, so the loop reconnects on the
-                # next iteration rather than spinning on a dead/None socket.
-                self._stop_keepalive()
-                if self._running and self._state != ConnectionState.DISCONNECTED:
-                    logger.warning("Message loop ended unexpectedly; reconnecting")
-                    self._ws = None
-                    await self._handle_reconnect()
             except websockets.ConnectionClosed as e:
                 logger.warning("Connection closed", code=e.code, reason=e.reason)
                 self._stop_keepalive()
@@ -341,9 +321,7 @@ class RelayClient:
             pong = create_pong_message(message.id)
             await self.send_message(pong)
         elif message.type == MessageType.PONG:
-            # Response to our keepalive ping; signal the keepalive watchdog
-            # that the broker is still alive.
-            self._pong_event.set()
+            # Response to our keepalive ping
             logger.debug("Received keepalive pong", correlation_id=message.id)
         elif message.type == MessageType.CANCEL:
             # TODO: Implement request cancellation
@@ -426,65 +404,22 @@ class RelayClient:
             await ws.close()
 
     async def _keepalive_loop(self) -> None:
-        """Send periodic keepalive pings and watch for the matching pong.
-
-        Sending a ping is not enough: on a half-open socket the send succeeds
-        (the bytes are buffered locally / by an intermediary such as Cloudflare)
-        while the broker never receives them, and the read loop blocks forever
-        without raising. So after each ping we wait up to ``keepalive_timeout``
-        for the broker's pong; if none arrives the connection is dead and we
-        force a reconnect instead of lingering as a zombie session.
-        """
+        """Send periodic keepalive pings to maintain connection."""
         # Run keepalive in both CONNECTED and PENDING states
         active_states = (ConnectionState.CONNECTED, ConnectionState.PENDING)
         while self._running and self._state in active_states:
             try:
                 await asyncio.sleep(self.keepalive_interval)
-                if self._state not in active_states:
-                    break
-
-                ping_id = f"ping-{uuid.uuid4().hex[:8]}"
-                self._pong_event.clear()
-                await self.send_message(create_ping_message(ping_id))
-                logger.debug("Sent keepalive ping", correlation_id=ping_id)
-
-                # Wait for the broker to answer. No pong in time => half-open.
-                try:
-                    await asyncio.wait_for(
-                        self._pong_event.wait(), timeout=self.keepalive_timeout
-                    )
-                    logger.debug("Keepalive pong received", correlation_id=ping_id)
-                except TimeoutError:
-                    logger.warning(
-                        "Keepalive pong timeout - connection is half-open, forcing reconnect",
-                        correlation_id=ping_id,
-                        timeout=f"{self.keepalive_timeout:.0f}s",
-                    )
-                    await self._force_disconnect()
-                    break
+                if self._state in active_states:
+                    ping_id = f"ping-{uuid.uuid4().hex[:8]}"
+                    ping_msg = create_ping_message(ping_id)
+                    await self.send_message(ping_msg)
+                    logger.debug("Sent keepalive ping", correlation_id=ping_id)
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.warning("Keepalive ping failed", error=str(e))
-                await self._force_disconnect()
                 break
-
-    async def _force_disconnect(self) -> None:
-        """Tear down a dead/half-open socket so run() will reconnect.
-
-        Mirrors the close pattern used after approval/revocation: clear the
-        socket and set state to DISCONNECTED so the run() loop establishes a
-        fresh session. Does not cancel the keepalive task (this is called from
-        within it); the loop returns on its own after this.
-        """
-        self._state = ConnectionState.DISCONNECTED
-        if self._ws:
-            ws = self._ws
-            self._ws = None  # Clear before closing to avoid stale reference
-            try:
-                await ws.close(code=1000, reason="keepalive timeout")
-            except Exception:
-                pass  # Connection may already be dead
 
     def _start_keepalive(self) -> None:
         """Start the keepalive task."""

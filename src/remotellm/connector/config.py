@@ -94,16 +94,3 @@ class ConnectorConfig(BaseSettings):
         default=300.0,
         description="Maximum delay between reconnection attempts (seconds)",
     )
-
-    # Keepalive
-    keepalive_interval: float = Field(
-        default=60.0,
-        description="Interval between keepalive pings to the broker (seconds)",
-    )
-    keepalive_timeout: float = Field(
-        default=30.0,
-        description=(
-            "Seconds to wait for a keepalive pong before treating the "
-            "connection as half-open and forcing a reconnect"
-        ),
-    )
