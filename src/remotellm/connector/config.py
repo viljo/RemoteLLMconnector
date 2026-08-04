@@ -94,3 +94,13 @@ class ConnectorConfig(BaseSettings):
         default=300.0,
         description="Maximum delay between reconnection attempts (seconds)",
     )
+
+    # Liveness
+    inbound_timeout: float = Field(
+        default=90.0,
+        description=(
+            "Seconds with no message received from the broker before the "
+            "connection is treated as half-open and a reconnect is forced. "
+            "Must exceed the broker's ping interval (30s by default)."
+        ),
+    )
