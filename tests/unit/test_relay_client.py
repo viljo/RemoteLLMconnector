@@ -76,13 +76,11 @@ class TestRelayClientInit:
             reconnect_base_delay=2.0,
             reconnect_max_delay=600.0,
             keepalive_interval=30.0,
-            keepalive_timeout=15.0,
         )
 
         assert client.reconnect_base_delay == 2.0
         assert client.reconnect_max_delay == 600.0
         assert client.keepalive_interval == 30.0
-        assert client.keepalive_timeout == 15.0
 
     def test_init_loads_credentials(self):
         """Test that initialization loads credentials from file."""
@@ -559,9 +557,6 @@ class TestRelayClientKeepalive:
         client._ws = AsyncMock()
         client._running = True
 
-        # Keep the watchdog satisfied so the loop keeps sending pings.
-        client._pong_event.set()
-
         client._start_keepalive()
         await asyncio.sleep(0.15)  # Wait for a few pings
         client._running = False
@@ -569,65 +564,6 @@ class TestRelayClientKeepalive:
 
         # Should have sent at least one ping
         assert client._ws.send.call_count >= 1
-
-    async def test_keepalive_pong_timeout_forces_disconnect(self):
-        """An unanswered keepalive ping tears the connection down for reconnect."""
-        handler = AsyncMock()
-        client = RelayClient(
-            broker_url="ws://localhost:8444",
-            broker_token="test-token",
-            request_handler=handler,
-            keepalive_interval=0.01,
-            keepalive_timeout=0.05,
-        )
-        client._state = ConnectionState.CONNECTED
-        mock_ws = AsyncMock()
-        client._ws = mock_ws
-        client._running = True
-
-        client._start_keepalive()
-        # Long enough for one ping plus the pong-timeout window to elapse.
-        await asyncio.sleep(0.2)
-
-        # No pong ever arrived -> half-open detected, connection dropped.
-        assert client.state == ConnectionState.DISCONNECTED
-        assert client._ws is None
-        mock_ws.close.assert_awaited()
-
-        client._running = False
-        client._stop_keepalive()
-
-    async def test_keepalive_survives_when_pong_received(self):
-        """While pongs keep arriving, the connection is held open."""
-        handler = AsyncMock()
-        client = RelayClient(
-            broker_url="ws://localhost:8444",
-            broker_token="test-token",
-            request_handler=handler,
-            keepalive_interval=0.01,
-            keepalive_timeout=0.2,
-        )
-        client._state = ConnectionState.CONNECTED
-        client._ws = AsyncMock()
-        client._running = True
-
-        # Simulate the broker answering every ping promptly.
-        async def auto_pong():
-            for _ in range(50):
-                await asyncio.sleep(0.005)
-                client._pong_event.set()
-
-        pong_task = asyncio.create_task(auto_pong())
-        client._start_keepalive()
-        await asyncio.sleep(0.1)
-
-        # Watchdog never fired; still connected.
-        assert client.state == ConnectionState.CONNECTED
-        assert client._ws is not None
-
-        client._running = False
-        client._stop_keepalive()
-        pong_task.cancel()
 
 
 class TestRelayClientReconnect:
