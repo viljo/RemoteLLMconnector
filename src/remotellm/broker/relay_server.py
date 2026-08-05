@@ -14,6 +14,7 @@ from aiohttp import web
 
 from remotellm.shared.logging import get_logger
 from remotellm.shared.protocol import (
+    MAX_MESSAGE_BYTES,
     ApprovedPayload,
     AuthPayload,
     MessageType,
@@ -262,7 +263,7 @@ class RelayServer:
         Returns:
             WebSocket response
         """
-        ws = web.WebSocketResponse()
+        ws = web.WebSocketResponse(max_msg_size=MAX_MESSAGE_BYTES)
         await ws.prepare(request)
         await self._handle_connection(ws)
         return ws
