@@ -11,6 +11,7 @@ from aiohttp import web
 from remotellm.shared.logging import bind_correlation_id, clear_context, get_logger
 from remotellm.shared.models import ErrorDetail, ErrorResponse
 from remotellm.shared.protocol import (
+    MAX_MESSAGE_BYTES,
     MessageType,
     RelayMessage,
     create_request_message,
@@ -63,7 +64,7 @@ class BrokerAPI:
         self.router = router
         self.user_api_keys = user_api_keys or []
         self.request_timeout = request_timeout
-        self._app = web.Application()
+        self._app = web.Application(client_max_size=MAX_MESSAGE_BYTES)
         self._setup_routes()
 
     def _setup_routes(self) -> None:

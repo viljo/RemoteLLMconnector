@@ -5,6 +5,14 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+# One relay message carries a whole LLM request/response body. The library
+# defaults (aiohttp HTTP body 1 MiB, websockets client 1 MiB, aiohttp WS
+# 4 MiB) silently capped prompts at ~1 MiB — far below a 256K-token context
+# (~2-3 MiB of JSON). 32 MiB clears any realistic prompt while still bounding
+# memory per message. Used by the broker HTTP API, the broker WS server and
+# the connector WS client so all three hops agree.
+MAX_MESSAGE_BYTES = 32 * 1024 * 1024
+
 
 class MessageType(str, Enum):
     """Types of messages in the relay protocol."""

@@ -14,6 +14,7 @@ from websockets.asyncio.client import ClientConnection
 
 from remotellm.shared.logging import get_logger
 from remotellm.shared.protocol import (
+    MAX_MESSAGE_BYTES,
     ApprovedPayload,
     MessageType,
     PendingPayload,
@@ -187,7 +188,7 @@ class RelayClient:
         logger.info("Connecting to broker", url=self.broker_url)
 
         try:
-            self._ws = await websockets.connect(self.broker_url)
+            self._ws = await websockets.connect(self.broker_url, max_size=MAX_MESSAGE_BYTES)
             self._state = ConnectionState.AUTHENTICATING
 
             # Send auth message with models list and optional name
