@@ -207,7 +207,7 @@ Response flow:
 │                           E2E Test Environment                              │
 │                                                                            │
 │  ┌──────────────┐      ┌──────────────┐      ┌──────────────┐      ┌─────────────┐
-│  │ llm.viljo.se │ <--> │ LLM_connector│ <--> │  LLM_broker  │ <--> │ Test client │
+│  │ llm.bitcarving.com │ <--> │ LLM_connector│ <--> │  LLM_broker  │ <--> │ Test client │
 │  │ /v1          │      │ (under test) │ NAT  │ (under test) │      │ (pytest)    │
 │  │              │      │              │ relay              │      │             │
 │  │ simulates    │      │ src/remotellm│      │ src/remotellm│      │ simulates   │
@@ -218,10 +218,10 @@ Response flow:
 └────────────────────────────────────────────────────────────────────────────┘
 
 Request flow:
-  Test client -> LLM_broker -> [NAT relay] -> LLM_connector -> llm.viljo.se/v1
+  Test client -> LLM_broker -> [NAT relay] -> LLM_connector -> llm.bitcarving.com/v1
 
 Response flow:
-  llm.viljo.se/v1 -> LLM_connector -> [NAT relay] -> LLM_broker -> Test client
+  llm.bitcarving.com/v1 -> LLM_connector -> [NAT relay] -> LLM_broker -> Test client
 ```
 
 **Note**: In E2E tests, both `LLM_connector` and `LLM_broker` are the actual production code from `src/remotellm/`. The test client simulates external users making API calls.
@@ -249,19 +249,19 @@ async def broker():
 
 @pytest.fixture
 async def connector(broker):
-    """Start LLM_connector connecting to broker and llm.viljo.se"""
+    """Start LLM_connector connecting to broker and llm.bitcarving.com"""
     from remotellm.connector.main import create_connector
     connector = await create_connector(
-        llm_url="https://llm.viljo.se/v1",
+        llm_url="https://llm.bitcarving.com/v1",
         broker_url="ws://127.0.0.1:9999"
     )
     yield connector
     await connector.shutdown()
 ```
 
-### 10. llm.viljo.se/v1 (Simulates Local LLM)
+### 10. llm.bitcarving.com/v1 (Simulates Local LLM)
 
-**Decision**: Use llm.viljo.se/v1 as the "local LLM" endpoint in E2E tests
+**Decision**: Use llm.bitcarving.com/v1 as the "local LLM" endpoint in E2E tests
 
 **Rationale**:
 - Real OpenAI-compatible API responses without running local model
@@ -308,7 +308,7 @@ aioresponses>=0.7.0       # Async HTTP mocking (for unit tests)
 # tests/e2e/config.yaml
 mock_relay_port: 9999
 llm_proxy_port: 11434
-llm_proxy_target: "https://llm.viljo.se/v1"
+llm_proxy_target: "https://llm.bitcarving.com/v1"
 llm_proxy_mode: "replay"  # or "live" or "record"
 cassette_dir: "tests/e2e/cassettes"
 test_api_key: "sk-test-key-for-e2e-min-32-chars"
@@ -317,7 +317,7 @@ test_api_key: "sk-test-key-for-e2e-min-32-chars"
 **Environment Variables for Live Mode** (store in `.env.test`, never commit):
 ```bash
 # .env.test (gitignored)
-LLM_PROXY_TARGET=https://llm.viljo.se/v1
+LLM_PROXY_TARGET=https://llm.bitcarving.com/v1
 LLM_PROXY_API_KEY=sk-d1a5b8b8cd4e4ac899f26ff5219e0b80
 LLM_PROXY_MODE=live
 ```
@@ -329,7 +329,7 @@ tests/
 ├── e2e/
 │   ├── __init__.py
 │   ├── conftest.py          # E2E fixtures (starts broker + connector)
-│   ├── cassettes/           # Recorded HTTP responses from llm.viljo.se
+│   ├── cassettes/           # Recorded HTTP responses from llm.bitcarving.com
 │   │   ├── chat_completion.yaml
 │   │   └── streaming.yaml
 │   ├── test_full_flow.py    # Happy path E2E tests

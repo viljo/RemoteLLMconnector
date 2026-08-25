@@ -56,7 +56,7 @@ tests/
 ├── unit/
 ├── integration/
 └── e2e/
-    └── cassettes/       # Recorded responses from llm.viljo.se
+    └── cassettes/       # Recorded responses from llm.bitcarving.com
 ```
 
 ## Commands
@@ -99,7 +99,7 @@ Note: Connector no longer accepts `--api-key`. All API keys are managed by the b
 
 ## E2E Test Endpoint
 
-- URL: `https://llm.viljo.se/v1`
+- URL: `https://llm.bitcarving.com/v1`
 - API key in `.env.test` (gitignored)
 
 <!-- MANUAL ADDITIONS START -->

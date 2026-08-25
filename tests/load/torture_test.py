@@ -12,7 +12,7 @@ Usage:
     pytest tests/load/torture_test.py -v -s
 
     # Against production endpoint
-    LLM_API_URL=https://llm.viljo.se/v1 LLM_API_KEY=your-key pytest tests/load/torture_test.py -v -s
+    LLM_API_URL=https://llm.bitcarving.com/v1 LLM_API_KEY=your-key pytest tests/load/torture_test.py -v -s
 
     # Run standalone
     python tests/load/torture_test.py --url http://localhost:8443/v1 --api-key sk-test
